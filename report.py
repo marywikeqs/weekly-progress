@@ -13,8 +13,6 @@ from html import escape
 
 # Time-saved ranges counted at their midpoints.
 TIME_SAVED_HOURS = {"None": 0, "Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5+ hrs": 6}
-# Other work's time spent, also at midpoints.
-TIME_SPENT_HOURS = {"Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5-10 hrs": 7.5, "10+ hrs": 12}
 FLAG_AT = 80  # percent of budget
 
 
@@ -69,7 +67,6 @@ def _week_numbers(data: dict, week: str, roster: list) -> dict:
         "claude": sum(u["type"] == "Claude" for u in ups),
         "nonClaude": sum(u["type"] != "Claude" for u in ups),
         "hours": sum(hours(u) for u in ups if u["type"] == "Claude") + sum(hours(t) for t in tasks if t["claude"]),
-        "taskHours": sum(TIME_SPENT_HOURS.get(t.get("timeSpent") or "", 0) for t in tasks),
         "spend": sum(u["spend"] for u in use),
         "budget": sum(u["budget"] for u in use),
     }
@@ -101,8 +98,7 @@ def build(data: dict, week: str) -> dict:
         projects = [{**u, "new": first_week[u["project"].lower()] == week}
                     for u in sorted((u for u in cur["updates"] if u["name"] == n), key=lambda u: u["project"].lower())]
         tasks = sorted((t for t in cur["tasks"] if t["name"] == n), key=lambda t: t["category"].lower())
-        people.append({"name": n, "projects": projects, "tasks": tasks,
-                       "taskHours": sum(TIME_SPENT_HOURS.get(t.get("timeSpent") or "", 0) for t in tasks)})
+        people.append({"name": n, "projects": projects, "tasks": tasks})
 
     # Claude impact
     impact: dict = {}
@@ -125,11 +121,10 @@ def build(data: dict, week: str) -> dict:
     # other work, grouped by kind
     other: dict = {}
     for t in sorted(cur["tasks"], key=lambda t: t["name"]):
-        g = other.setdefault(t["category"].lower(), {"category": t["category"], "entries": [], "hours": 0, "saved": 0})
+        g = other.setdefault(t["category"].lower(), {"category": t["category"], "entries": [], "saved": 0})
         g["entries"].append(t)
-        g["hours"] += TIME_SPENT_HOURS.get(t.get("timeSpent") or "", 0)
         g["saved"] += hours(t) if t["claude"] else 0
-    other_groups = sorted(other.values(), key=lambda g: (-g["hours"], g["category"].lower()))
+    other_groups = sorted(other.values(), key=lambda g: (-len(g["entries"]), g["category"].lower()))
 
     # usage and spend
     prev_spend = {u["name"]: u["spend"] for u in last["usage"]} if same_month else {}
@@ -175,7 +170,7 @@ def render_text(r: dict, base_url: str = "") -> str:
             line += (" · " if line else "") + "other work: " + ", ".join(t["category"] for t in pp["tasks"])
         lines.append(f"   • *{pp['name']}:* {line}")
     if r["other"]:
-        lines.append(f"*Other work:* ~{c['taskHours']:g} hrs · " + ", ".join(
+        lines.append("*Other work:* " + ", ".join(
             f"{g['category']} ({len(g['entries'])})" for g in r["other"]))
     top = ", ".join(f"{t['project']} ({t['hours']:g} hrs)" for t in r["top"][:3])
     lines.append(f"*Claude time saved:* ~{c['hours']:g} hrs{_delta(c['hours'], l['hours'], hp, ' hrs')}"
@@ -346,7 +341,6 @@ def render_html(r: dict, weeks: list) -> str:
     o.append('<div class="stats">'
              + _stat(f"{len(p['complete'])}/{p['roster']}", "sent their update", "everyone's in" if not p["missing"] else f"{len(p['missing'])} to go", GREEN)
              + _stat(str(c["projects"]), "projects", f"{c['claude']} Claude · {c['nonClaude']} non-Claude", BLUE)
-             + _stat(f"{c['taskHours']:g} hrs", "on other work", f"{len(c['tasks'])} item{'' if len(c['tasks']) == 1 else 's'}", ORANGE)
              + _stat(f"{c['hours']:g} hrs", "saved with Claude", _wow(c["hours"], l["hours"], hp, lambda v: f"{v:g} hrs"), ACCENT)
              + _stat(money(c["spend"]), "Claude spend this month", spend_note, GRAPE)
              + "</div>")
@@ -383,10 +377,9 @@ def render_html(r: dict, weeks: list) -> str:
                      + ('<div class="lh next">Next steps</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div class="meta">{meta}</div>' if meta else "") + "</div></div>")
         if pp["tasks"]:
-            o.append('<div class="sublabel">Other work' + (f' · about {pp["taskHours"]:g} hrs' if pp["taskHours"] else "") + "</div>")
+            o.append('<div class="sublabel">Other work</div>')
         for t in pp["tasks"]:
             o.append(f'<div class="row"><span class="ring{" claude" if t["claude"] else ""}"></span><div class="body"><div class="top">{_pill(t["category"], colour_for(t["category"]))}'
-                     + (f'<span class="label">{escape(t["timeSpent"])}</span>' if t.get("timeSpent") else "")
                      + (_pill("Claude saved " + t["timeSaved"], ACCENT) if t["claude"] else '<span class="label">no Claude</span>') + "</div>"
                      + (f'<div class="meta">{escape(t["note"])}</div>' if t.get("note") else "") + "</div></div>")
         o.append("</div>")

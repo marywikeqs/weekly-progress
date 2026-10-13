@@ -1,9 +1,8 @@
 """
 mailer.py — emails the weekly report through Resend (https://resend.com).
 
-The server sends one email per week: as soon as everyone on the roster has
-sent their update, or at the backup deadline (Monday 9 AM after the week
-ends) with whoever is in. Sending is over HTTPS, so Railway's SMTP block
+The server sends one email per week, as soon as everyone on the roster has
+sent their update (no partial sends). Sending is over HTTPS, so Railway's SMTP block
 doesn't matter.
 
 Environment:
@@ -12,7 +11,7 @@ Environment:
                    test sender, which only delivers to the address the Resend
                    account was opened with, until a domain is verified there
   PUBLIC_URL       the app's address, for links       default the Railway URL
-  REPORT_TIMEZONE  the backup deadline's timezone     default America/Chicago
+  REPORT_TIMEZONE  timezone for "this week"            default America/Chicago
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ import os
 import re
 import urllib.error
 import urllib.request
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 
 import report
@@ -47,11 +46,6 @@ def configured() -> bool:
 
 def recipients(cfg: dict) -> list:
     return [a for a in re.split(r"[\s,;]+", cfg.get("reportEmail", "")) if EMAIL_RX.match(a)]
-
-
-def deadline(week: str) -> datetime:
-    """The backup send: 9 AM on the Monday after the week's Friday."""
-    return datetime.combine(date.fromisoformat(week) + timedelta(days=3), time(9), TZ)
 
 
 def now_local() -> datetime:
@@ -131,15 +125,14 @@ def html(r: dict, note: str = "") -> str:
         (report.GREEN, f"{len(p['complete'])}/{p['roster']}", "sent their update",
          f'missing {escape(", ".join(p["missing"]))}' if p["missing"] else "everyone's in"),
         (report.BLUE, str(c["projects"]), "projects", f"{c['claude']} Claude · {c['nonClaude']} non-Claude{wow(c['projects'], l['projects'])}"),
-        (report.ORANGE, f"{c['taskHours']:g} hrs", "on other work", f"{len(c['tasks'])} item{'' if len(c['tasks']) == 1 else 's'}"),
         (report.ACCENT, f"~{c['hours']:g} hrs", "saved with Claude", wow(c["hours"], l["hours"], " hrs").strip()),
         (report.GRAPE, report.money(c["spend"]), "Claude spend", spend),
     ]
-    cells = [f'<td valign="top" width="33%" style="padding:4px"><div style="background:{tint(col)};border:1px solid {tint(col, .3)};border-radius:8px;padding:10px 12px">'
+    cells = [f'<td valign="top" width="50%" style="padding:4px"><div style="background:{tint(col)};border:1px solid {tint(col, .3)};border-radius:8px;padding:10px 12px">'
              f'<div style="font-size:20px;font-weight:bold;color:{shade(col, .85)}">{v}</div><div style="font-size:12px;font-weight:bold">{k}</div>'
              f'<div style="font-size:11px;color:{MUTED}">{n}</div></div></td>' for col, v, k, n in tiles]
-    o.append(f'<table cellpadding="0" cellspacing="0" width="100%" style="margin-top:12px;border-collapse:collapse"><tr>{"".join(cells[:3])}</tr>'
-             f'<tr>{"".join(cells[3:])}<td></td></tr></table>')
+    o.append(f'<table cellpadding="0" cellspacing="0" width="100%" style="margin-top:12px;border-collapse:collapse"><tr>{"".join(cells[:2])}</tr>'
+             f'<tr>{"".join(cells[2:])}</tr></table>')
 
     sub = f'style="font-size:12px;color:{MUTED};margin-top:2px"'
     ul = 'style="margin:0;padding-left:18px"'
@@ -161,9 +154,8 @@ def html(r: dict, note: str = "") -> str:
                      + (f'<div style="font-size:11px;font-weight:bold;color:{report.BLUE};margin-top:4px">NEXT STEPS</div><ul {ul}>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div {small}>{extra}</div>' if extra else "") + "</div>")
         if pp["tasks"]:
-            hrs = f" · ~{pp['taskHours']:g} hrs" if pp["taskHours"] else ""
-            o.append(f'<div style="font-size:11px;font-weight:bold;color:{col};margin-top:4px">OTHER WORK{hrs.upper()}</div>'
-                     + "".join(f'<div style="margin:4px 0">{pill(t["category"], report.colour_for(t["category"]))}{" " + escape(t["timeSpent"]) if t.get("timeSpent") else ""}'
+            o.append(f'<div style="font-size:11px;font-weight:bold;color:{col};margin-top:4px">OTHER WORK</div>'
+                     + "".join(f'<div style="margin:4px 0">{pill(t["category"], report.colour_for(t["category"]))}'
                                f'{" " + pill("Claude saved " + t["timeSaved"], report.ACCENT) if t["claude"] else ""}{" — " + escape(t["note"]) if t.get("note") else ""}</div>'
                                for t in pp["tasks"]))
         o.append("</div>")

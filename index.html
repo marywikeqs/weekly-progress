@@ -342,11 +342,10 @@ function addTask(t = {}) {
   el.innerHTML = `<div class="grid">
       <div><select class="t-cat" aria-label="Kind of work">${options([...cats, {value: '__new', label: 'Something else…'}], 'Kind of work')}</select>
         <input class="t-new" maxlength="80" placeholder="Name it" aria-label="Name the work" hidden></div>
-      <select class="t-spent" aria-label="Time spent (optional)">${options(CFG.timeSpent.map(x => ({value: x, label: 'Spent: ' + x})), 'Time spent')}</select>
       <select class="t-claude" aria-label="Used Claude?">${options([{value: 'yes', label: 'Used Claude'}, {value: 'no', label: 'No Claude'}], 'Used Claude?')}</select>
       <select class="t-saved" aria-label="Time saved with Claude" hidden>${options(CFG.timeSaved.map(x => ({value: x, label: 'Saved: ' + x})), 'Time saved')}</select>
     </div>
-    <div class="foot"><input class="t-note" maxlength="300" placeholder="Short note (optional)" aria-label="Note (optional)">
+    <div class="foot"><input class="t-note" maxlength="300" placeholder="Short summary of what you did" aria-label="Summary">
       <button type="button" class="remove" aria-label="Remove this line">Remove</button></div>
     <div class="t-err" hidden></div>`;
   const q = s => el.querySelector(s);
@@ -354,7 +353,6 @@ function addTask(t = {}) {
     if (known) q('.t-cat').value = cats.find(c => c.toLowerCase() === t.category.toLowerCase());
     else { q('.t-cat').value = '__new'; q('.t-new').value = t.category; }
   }
-  q('.t-spent').value = t.timeSpent || '';
   q('.t-claude').value = t.claude === true ? 'yes' : t.claude === false ? 'no' : '';
   q('.t-saved').value = t.timeSaved || '';
   q('.t-note').value = t.note || '';
@@ -375,12 +373,13 @@ function tasksEmpty() { $('tasks-empty').hidden = !!$('tasks').children.length; 
 function readTask(el) {
   const q = s => el.querySelector(s), c = q('.t-claude').value;
   return {category: (q('.t-cat').value === '__new' ? q('.t-new').value : q('.t-cat').value).trim(),
-          timeSpent: q('.t-spent').value || null, claude: c === 'yes' ? true : c === 'no' ? false : null,
+          claude: c === 'yes' ? true : c === 'no' ? false : null,
           timeSaved: c === 'yes' ? q('.t-saved').value : null, note: q('.t-note').value.trim()};
 }
 function checkTask(el, d) {
   const q = s => el.querySelector(s), bad = [];
   if (!d.category) bad.push([q('.t-cat').value === '__new' ? q('.t-new') : q('.t-cat'), 'Choose or name the kind of work.']);
+  if (!d.note) bad.push([q('.t-note'), 'Add a short summary of what you did.']);
   if (d.claude === null) bad.push([q('.t-claude'), 'Say whether you used Claude.']);
   if (d.claude && !d.timeSaved) bad.push([q('.t-saved'), 'Choose how much time Claude saved.']);
   return bad;
@@ -456,7 +455,7 @@ async function send(ev) {
   const names = used.map(c => readCard(c).project.toLowerCase());
   used.forEach((c, i) => { if (names[i] && names.indexOf(names[i]) !== i) { cardError(c, 'This project is already listed above. Combine them into one.'); firstBad = firstBad || c; } });
   // an untouched blank line is skipped
-  const taskEls = [...document.querySelectorAll('.task')].filter(el => { const d = readTask(el); return d.category || d.note || d.timeSpent || d.claude !== null; });
+  const taskEls = [...document.querySelectorAll('.task')].filter(el => { const d = readTask(el); return d.category || d.note || d.claude !== null; });
   taskEls.forEach(el => {
     const bad = checkTask(el, readTask(el));
     taskError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
@@ -496,7 +495,7 @@ function showDone(r) {
   $('done').innerHTML = `<div class="big">✓</div><h2>${r.resent ? 'Update re-sent' : 'Sent'}. Thanks, ${esc($('name').value.split(' ')[0])}!</h2>
     <p class="sub">Week ending ${esc(fmtWeek($('week').value))}. You've used ${pct}% of your ${money(u.budget)} budget this month.</p>
     <ul>${r.updates.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1"><strong>${esc(x.project)}</strong></span><span class="sub">${esc(x.type)} project</span></li>`).join('')}
-      ${r.tasks.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.timeSpent || '')}</span></li>`).join('')}</ul>
+      ${r.tasks.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.note)}</span></li>`).join('')}</ul>
     <p style="margin:24px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
   $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;
   $('edit').onclick = load;

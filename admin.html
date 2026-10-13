@@ -131,7 +131,7 @@ function renderEmail() {
   else { st.textContent = 'Email is on.'; st.className = 'status-line ok'; }
   const sent = Object.entries(email.sent || {}).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6);
   $('sent-list').innerHTML = sent.map(([w, s]) => `<li>Week ending ${esc(fmtWeek(w))}: sent ${esc(new Date(s.at).toLocaleString())}
-    ${s.reason === 'everyone' ? 'when everyone was in' : 'at the Monday deadline'}</li>`).join('');
+    ${s.reason === 'everyone' ? 'when everyone was in' : 'at the old Monday deadline'}</li>`).join('');
 }
 
 function render() {

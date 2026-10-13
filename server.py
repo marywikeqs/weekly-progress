@@ -86,7 +86,6 @@ LOCK = threading.Lock()
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
 REQUEST_STATUSES = ["Approved", "Pending", "Denied"]
-TIME_SPENT = ["Under 1 hr", "1-3 hrs", "3-5 hrs", "5-10 hrs", "10+ hrs"]
 DEFAULT_CATEGORIES = ["Support Hub", "Deal Desk", "Ad hoc analysis"]
 
 
@@ -229,12 +228,12 @@ def clean_task(d: dict) -> dict | str:
     if not cat:
         return "Choose or name the kind of work."
     cat = {c.lower(): c for c in task_categories()}.get(cat.lower(), cat)
-    spent = d.get("timeSpent") or None
-    if spent is not None and spent not in TIME_SPENT:
-        return "Choose how much time it took."
+    note = re.sub(r"\s+", " ", str(d.get("note", ""))).strip()[:300]
+    if not note:
+        return "Add a short summary of what you did."
     if d.get("claude") not in (True, False):
         return "Say whether you used Claude for it."
-    out = {"category": cat, "timeSpent": spent, "note": re.sub(r"\s+", " ", str(d.get("note", ""))).strip()[:300],
+    out = {"category": cat, "note": note,
            "claude": d["claude"], "timeSaved": None}
     if d["claude"]:
         if d.get("timeSaved") not in TIME_SAVED:
@@ -348,14 +347,10 @@ def due_emails() -> list:
     out = []
     if not any(p["active"] for p in DATA["config"]["roster"]):
         return out
-    now = mailer.now_local()
     for w in weeks_to_check():
         r = report.build(DATA, w)
-        if not r["participation"]["missing"]:
+        if not r["participation"]["missing"]:      # only once everyone is in
             out.append((w, r, "everyone"))
-        elif r["participation"]["complete"] and mailer.deadline(w) <= now < mailer.deadline(w) + timedelta(days=3):
-            # (a week nobody sent anything for gets no email)
-            out.append((w, r, "deadline"))
     return out
 
 
@@ -366,8 +361,7 @@ def mail_once() -> None:
         to = mailer.recipients(DATA["config"])
         due = due_emails() if to else []
     for week, r, reason in due:
-        note = "" if reason == "everyone" else f"Sent at the Monday deadline. Still missing: {', '.join(r['participation']['missing'])}."
-        ok, detail = mailer.send(to, mailer.subject(r), mailer.html(r, note), mailer.plain(r))
+        ok, detail = mailer.send(to, mailer.subject(r), mailer.html(r), mailer.plain(r))
         with LOCK:
             if ok:
                 DATA["sent"][week] = {"at": now(), "to": to, "reason": reason, "id": detail}
@@ -412,7 +406,7 @@ UPDATE_COLS = [
 ]
 TASK_COLS = [
     ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]), ("Work", lambda r: r["category"]),
-    ("Time spent", lambda r: r.get("timeSpent") or ""), ("Note", lambda r: r.get("note", "")),
+    ("Summary", lambda r: r.get("note", "")),
     ("Used Claude", lambda r: "Yes" if r["claude"] else "No"), ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
     ("Time saved (hrs, midpoint)", lambda r: report.hours(r) if r["claude"] else ""),
     ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
@@ -544,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
                 "timeSaved": TIME_SAVED, "requestStatuses": REQUEST_STATUSES,
-                "taskCategories": task_categories(), "timeSpent": TIME_SPENT,
+                "taskCategories": task_categories(),
                 "writable": WRITABLE, "persistent": state_persistent(),
             })
         if path == "/api/mine":

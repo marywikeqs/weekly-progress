@@ -89,7 +89,7 @@ try:
         c2.locator(".f-n").first.fill("Chase finance")
         pg.click("#add-task")
         tk = pg.locator(".task").last
-        tk.locator(".t-cat").select_option("Deal Desk"); tk.locator(".t-spent").select_option("1-3 hrs")
+        tk.locator(".t-cat").select_option("Deal Desk")
         tk.locator(".t-claude").select_option("yes")
         check(tk.locator(".t-saved").is_visible(), "Used Claude shows time saved")
         tk.locator(".t-saved").select_option("Under 1 hr"); tk.locator(".t-note").fill("Two deal reviews")
