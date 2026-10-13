@@ -2,12 +2,9 @@
 
 The team's weekly check-in, and the CRO's report built from it.
 
-- **Project updates** (`/`): one per project per person per week. Name, week ending, project (list or Other), Claude / Non-Claude, status, 1–3 bullets of progress and next steps. Claude projects ask for time saved; non-Claude projects ask what Claude could have helped with.
-- **Weekly usage** (`/#usage`): one per person per week. Spend so far this month, current monthly budget, any budget increase request (amount, reason, status) and a required usage screenshot.
+- **The weekly form** (`/`): everything in one send. Name, week ending (a date picker that only lands on Fridays), then a card per project: project (picked from anything reported before, or a new name), Claude / Non-Claude, status, 1–3 bullets of progress and next steps, time saved with Claude for Claude projects, and what Claude could have helped with for non-Claude ones. Below that is Claude usage: spend so far this month, current monthly budget, any budget increase request (amount, reason, status) and a required usage screenshot. Nothing saves unless all of it is valid. A new week starts from last week's unfinished projects and budget, and sending again in the same week replaces that week's update.
 - **Weekly report** (`/report`): participation, projects grouped by name (Blocked and At risk first), Claude time saved (range midpoints: None 0, Under 1 hr 0.5, 1–3 hrs 2, 3–5 hrs 4, 5+ hrs 6), Claude-could-help ideas, spend vs budget (over 80% flagged), budget requests and the screenshots, with week-over-week comparison. It has buttons for Print / PDF and Copy Slack summary (`/report.txt`).
 - **Admin** (`/admin`): roster, project list (with default type), screenshot instructions, projects people typed under Other, and CSV exports of everything.
-
-Resubmitting the same project for the same week, or the usage form for the same week, replaces the earlier entry. People can edit or delete their own entries for the week.
 
 ## Running it
 

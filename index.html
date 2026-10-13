@@ -12,106 +12,79 @@
 --accent:#91a7ff;--accent-soft:#232c48;--red:#ff8787;--red-soft:#3a1f22;--green:#8ce99a;--green-soft:#1d3324;--grey-soft:#262b35;--focus:#91a7ff55;--on-accent:#12151b}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:720px;margin:0 auto;padding:24px 16px 80px}
-h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:0 0 4px}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px 120px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:19px;margin:28px 0 10px}h3{font-size:16px;margin:0}
 .lede{color:var(--muted);margin:0 0 20px;font-size:15px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:12px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media (max-width:560px){.row{grid-template-columns:1fr}}
-label{display:block;font-weight:600;font-size:14px;margin:14px 0 5px}label:first-child{margin-top:0}
+label,.lbl{display:block;font-weight:600;font-size:14px;margin:14px 0 5px}
+.row>div>label:first-child,.card>label:first-child{margin-top:0}
 label .opt{font-weight:400;color:var(--muted)}
 .hint{font-size:13px;color:var(--muted);margin:-2px 0 6px}
+#week-note{margin:6px 0 0}
 input,select,textarea{width:100%;font:inherit;font-size:16px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+input[type=date]{min-height:44px}
 textarea{resize:vertical;min-height:44px}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus)}
+.invalid{border-color:var(--red)!important}
 .money{position:relative}.money span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}.money input{padding-left:24px}
 .bullet{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}.bullet b{color:var(--muted);padding-top:9px;width:12px}
 .seg{display:flex;gap:8px}.seg label{flex:1;margin:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .seg input{width:auto;margin:0}.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
-.tabs{display:flex;gap:4px;background:var(--grey-soft);padding:4px;border-radius:10px;margin-bottom:16px}
-.tabs button{flex:1;border:0;background:none;padding:9px;border-radius:7px;font:inherit;font-size:15px;font-weight:600;color:var(--muted);cursor:pointer}
-.tabs button[aria-selected=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px #0002}
-.tabs .tick{color:var(--green)}
-button.primary,button.ghost{font:inherit;font-weight:600;padding:11px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--accent)}
-button.primary{background:var(--accent);color:var(--on-accent)}button.ghost{background:none;color:var(--accent)}
-button:disabled{opacity:.6;cursor:default}
-.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;align-items:center}
-.msg{padding:10px 12px;border-radius:8px;font-size:14px;margin-top:14px;display:none}
-.msg.err{display:block;background:var(--red-soft);color:var(--red)}.msg.ok{display:block;background:var(--green-soft);color:var(--green)}
-.sent{list-style:none;padding:0;margin:8px 0 0}.sent li{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
-.sent li:first-child{border-top:0}.sent .grow{flex:1;min-width:0}.sent .sub{color:var(--muted);font-size:13px}
-.link{background:none;border:0;color:var(--accent);font:inherit;font-size:14px;cursor:pointer;padding:4px}
-.link.danger{color:var(--red)}
+.seg.invalid label{border-color:var(--red)}
+.proj-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.proj-head h3{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+.remove{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;cursor:pointer;padding:4px 6px}
+.remove:hover{color:var(--red)}
+.card-err{color:var(--red);font-size:14px;margin-top:10px}
+.add{width:100%;font:inherit;font-weight:600;padding:12px;border:1.5px dashed var(--line);border-radius:12px;background:none;color:var(--accent);cursor:pointer}
+.add:hover{border-color:var(--accent)}
+.note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;margin-bottom:12px}
 .instructions{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-line;margin-bottom:8px}
 .preview{margin-top:8px;max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;display:none}
-.empty{color:var(--muted);font-size:14px;margin:6px 0 0}
-[hidden]{display:none!important}
+.sendbar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px}
+.sendbar .in{max-width:720px;margin:0 auto;display:flex;gap:12px;align-items:center}
+.sendbar .msg{flex:1;font-size:14px;color:var(--muted);min-width:0}
+.sendbar .msg.err{color:var(--red)}.sendbar .msg.ok{color:var(--green)}
+button.primary{font:inherit;font-weight:600;padding:12px 22px;border-radius:8px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);white-space:nowrap}
+button:disabled{opacity:.6;cursor:default}
+.done{text-align:center;padding:28px 18px}
+.done .big{font-size:40px;line-height:1;color:var(--green)}
+.done ul{text-align:left;display:inline-block;margin:10px 0 0;padding-left:20px;font-size:15px}
 .banner{background:var(--red-soft);color:var(--red);padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:16px}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Weekly Progress</h1>
-  <p class="lede">Your weekly check-in: one update per project you worked on, plus your Claude usage. About 5 minutes.</p>
+  <p class="lede">Your weekly check-in: the projects you worked on, plus your Claude usage, sent together in one go. About 5 minutes.</p>
   <div id="banner" class="banner" hidden></div>
 
   <div class="card">
     <div class="row">
       <div><label for="name">Name</label><select id="name"><option value="">Choose your name</option></select></div>
-      <div><label for="week">Week ending</label><select id="week"></select></div>
+      <div><label for="week">Week ending (Friday)</label><input type="date" id="week" step="7"><p class="hint" id="week-note" hidden></p></div>
     </div>
   </div>
 
-  <div class="tabs" role="tablist">
-    <button role="tab" id="tab-proj" aria-selected="true" aria-controls="pane-proj">Project updates <span id="proj-count"></span></button>
-    <button role="tab" id="tab-use" aria-selected="false" aria-controls="pane-use">Weekly usage <span id="use-tick"></span></button>
-  </div>
+  <div id="done" class="card done" hidden></div>
 
-  <!-- Project updates -->
-  <div id="pane-proj" role="tabpanel">
-    <div class="card" id="sent-card" hidden>
-      <h2>Sent for this week</h2>
-      <ul class="sent" id="sent"></ul>
-    </div>
-    <form class="card" id="proj-form" novalidate>
-      <h2 id="proj-title">Add a project update</h2>
-      <div id="pick-wrap"><label for="project">Project</label>
-      <p class="hint">Projects anyone has reported before are listed. Choose New project for anything else.</p>
-      <select id="project"></select></div>
-      <div id="other-wrap" hidden><label for="other">New project name</label>
-        <p class="hint">Keep it short and use the same name every week, so the report can follow it week to week.</p>
-        <input id="other" maxlength="120" placeholder="e.g. Commission Audit Tool"></div>
-      <div class="row">
-        <div><label for="ptype">Project type</label>
-          <select id="ptype"><option value="">Choose</option><option value="Claude">Claude project</option><option value="Non-Claude">Non-Claude project</option></select></div>
-        <div><label for="status">Status</label><select id="status"></select></div>
-      </div>
-      <label>Progress and next steps</label>
-      <p class="hint">One to three short bullets: what moved this week and what's next.</p>
-      <div class="bullet"><b>•</b><textarea id="b1" rows="2" maxlength="500"></textarea></div>
-      <div class="bullet"><b>•</b><textarea id="b2" rows="2" maxlength="500" placeholder="Optional"></textarea></div>
-      <div class="bullet"><b>•</b><textarea id="b3" rows="2" maxlength="500" placeholder="Optional"></textarea></div>
-      <div id="saved-wrap" hidden><label for="saved">Time saved with Claude this week</label><select id="saved"></select></div>
-      <div id="help-wrap" hidden><label for="help">Anything Claude could have helped with? <span class="opt">(optional)</span></label>
-        <input id="help" maxlength="300" placeholder="A step that could have been faster with Claude"></div>
-      <div class="actions">
-        <button class="primary" type="submit" id="proj-save">Save update</button>
-        <button class="ghost" type="button" id="proj-cancel" hidden>Cancel edit</button>
-      </div>
-      <div class="msg" id="proj-msg" role="status"></div>
-    </form>
-  </div>
+  <form id="form" novalidate hidden>
+    <div id="state" class="note" hidden></div>
 
-  <!-- Weekly usage -->
-  <div id="pane-use" role="tabpanel" hidden>
-    <form class="card" id="use-form" novalidate>
-      <h2>Claude usage this week</h2>
-      <p class="hint" id="use-state"></p>
+    <h2>Projects</h2>
+    <div id="projects"></div>
+    <button type="button" class="add" id="add">+ Add another project</button>
+
+    <h2>Claude usage</h2>
+    <div class="card" id="usage">
       <div class="row">
         <div><label for="spend">Spend used so far this month</label><div class="money"><span>$</span><input id="spend" inputmode="decimal" placeholder="0.00"></div></div>
         <div><label for="budget">Current monthly budget</label><div class="money"><span>$</span><input id="budget" inputmode="decimal" placeholder="0.00"></div></div>
       </div>
-      <label>Did you request a budget increase this week?</label>
-      <div class="seg"><label><input type="radio" name="inc" value="no"> No</label><label><input type="radio" name="inc" value="yes"> Yes</label></div>
+      <span class="lbl">Did you request a budget increase this week?</span>
+      <div class="seg" id="inc-seg"><label><input type="radio" name="inc" value="no"> No</label><label><input type="radio" name="inc" value="yes"> Yes</label></div>
       <div id="inc-wrap" hidden>
         <div class="row">
           <div><label for="inc-amount">New budget requested</label><div class="money"><span>$</span><input id="inc-amount" inputmode="decimal"></div></div>
@@ -124,210 +97,207 @@ button:disabled{opacity:.6;cursor:default}
       <input type="file" id="shot" accept="image/*">
       <p class="hint" id="shot-state"></p>
       <img class="preview" id="shot-preview" alt="Screenshot preview">
-      <div class="actions"><button class="primary" type="submit" id="use-save">Save usage</button></div>
-      <div class="msg" id="use-msg" role="status"></div>
-    </form>
-  </div>
+      <div class="card-err" id="usage-err" hidden></div>
+    </div>
+  </form>
 </div>
+
+<div class="sendbar" id="sendbar" hidden><div class="in">
+  <div class="msg" id="msg"></div>
+  <button class="primary" id="send" type="submit" form="form">Send weekly update</button>
+</div></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let CFG = null, MINE = {updates: [], usage: null, lastBudget: null}, editing = null, shotData = null;
+let CFG = null, MINE = null, shotData = null, cardSeq = 0, lastWeek = null;
 
-// ---- weeks: this Friday Mon–Fri, last Friday on the weekend ----
+// ---- helpers ----
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-function currentFriday() {
-  const d = new Date(); d.setHours(12, 0, 0, 0);
-  const wd = d.getDay();                      // Sun 0 … Sat 6
+const day = s => new Date(s + 'T12:00');
+// The Friday a date belongs to: that week's Friday Mon–Fri, the one just past on a weekend.
+function fridayFor(d) {
+  d = new Date(d); d.setHours(12, 0, 0, 0);
+  const wd = d.getDay();
   d.setDate(d.getDate() + (wd === 6 ? -1 : wd === 0 ? -2 : 5 - wd));
   return d;
 }
-function weekLabel(d) { return d.toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'}); }
-
-function store(k, v) { try { v === undefined ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
+const fmtWeek = s => day(s).toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'});
+function store(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} }
 function recall(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const money = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
+const num = v => { const n = parseFloat(String(v).replace(/[$,\s]/g, '')); return isNaN(n) ? null : n; };
+const options = (items, first) => (first ? `<option value="">${first}</option>` : '') +
+  items.map(i => typeof i === 'string' ? `<option>${esc(i)}</option>` : `<option value="${esc(i.value)}">${esc(i.label)}</option>`).join('');
+function msg(text, kind) { $('msg').textContent = text; $('msg').className = 'msg ' + (kind || ''); }
 
 async function api(path, opts = {}) {
   const r = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...opts});
   let body = {};
   try { body = await r.json(); } catch (e) {}
-  if (!r.ok) throw new Error(body.error || `The server said ${r.status}.`);
+  if (!r.ok) { const e = new Error(body.error || `The server said ${r.status}.`); e.body = body; throw e; }
   return body;
 }
-function opt(sel, items, first) {
-  sel.innerHTML = (first ? `<option value="">${first}</option>` : '') +
-    items.map(i => typeof i === 'string' ? `<option>${esc(i)}</option>` : `<option value="${esc(i.value)}">${esc(i.label)}</option>`).join('');
+
+// ---- week: a date picker that only lands on Fridays ----
+// min is a Friday and step is 7, so Chrome greys out every other day; any
+// browser that lets another day through gets moved to that week's Friday.
+function setupWeek() {
+  const f = fridayFor(new Date()), lo = new Date(f), hi = new Date(f);
+  lo.setDate(f.getDate() - 7 * 52); hi.setDate(f.getDate() + 7);
+  Object.assign($('week'), {min: iso(lo), max: iso(hi), value: iso(f)});
+  lastWeek = iso(f);
+  $('week').onchange = () => {
+    const w = $('week'), note = $('week-note');
+    if (!w.value) { w.value = lastWeek; return; }
+    if (w.value === lastWeek) return;     // same week again: keep any note showing
+    note.hidden = true;
+    let fri = iso(fridayFor(day(w.value)));
+    if (fri < w.min) fri = w.min;
+    if (fri > w.max) fri = w.max;
+    if (fri !== w.value) { note.textContent = `Weeks end on Friday, so this is the week ending ${fmtWeek(fri)}.`; note.hidden = false; w.value = fri; }
+    if (w.value !== lastWeek) { lastWeek = w.value; load(); }
+  };
 }
-function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
-function msg(el, text, ok) { el.textContent = text; el.className = 'msg ' + (text ? (ok ? 'ok' : 'err') : ''); }
-const money = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
-const num = v => { const n = parseFloat(String(v).replace(/[$,\s]/g, '')); return isNaN(n) ? null : n; };
 
 // ---- setup ----
 async function init() {
+  setupWeek();
   try { CFG = await api('/api/config'); }
   catch (e) { $('banner').textContent = 'Couldn\'t load the form: ' + e.message; $('banner').hidden = false; return; }
-  if (!CFG.writable) { $('banner').textContent = 'The server can\'t save right now. Submissions will fail until an admin fixes its storage.'; $('banner').hidden = false; }
-
-  opt($('name'), CFG.roster, 'Choose your name');
+  if (!CFG.writable) { $('banner').textContent = 'The server can\'t save right now. Sending will fail until an admin fixes its storage.'; $('banner').hidden = false; }
+  $('name').innerHTML = options(CFG.roster, 'Choose your name');
   const me = recall('wp-name');
   if (me && CFG.roster.includes(me)) $('name').value = me;
-
-  const f = currentFriday(), weeks = [];
-  for (let i = 0; i < 6; i++) { const d = new Date(f); d.setDate(f.getDate() - 7 * i); weeks.push({value: iso(d), label: weekLabel(d) + (i === 0 ? ' (this week)' : '')}); }
-  opt($('week'), weeks);
-
-  fillProjects();
-  opt($('status'), CFG.statuses, 'Choose');
-  opt($('saved'), CFG.timeSaved, 'Choose');
-  opt($('inc-status'), CFG.requestStatuses, 'Choose');
+  $('inc-status').innerHTML = options(CFG.requestStatuses, 'Choose');
   $('shot-howto').textContent = CFG.screenshotInstructions || 'Capture your Claude usage screen for this month so far.';
 
-  $('name').onchange = () => { store('wp-name', $('name').value || undefined); refresh(); };
-  $('week').onchange = refresh;
-  $('tab-proj').onclick = () => tab('proj');
-  $('tab-use').onclick = () => tab('use');
-  $('project').onchange = onProject;
-  $('ptype').onchange = showConditional;
-  $('proj-form').onsubmit = saveProject;
-  $('proj-cancel').onclick = () => resetProject();
+  $('name').onchange = () => { store('wp-name', $('name').value); load(); };
+  $('add').onclick = () => { const c = addCard(); c.querySelector('select, input').focus(); };
   document.querySelectorAll('input[name=inc]').forEach(r => r.onchange = () => { $('inc-wrap').hidden = incValue() !== true; });
   $('shot').onchange = onShot;
-  $('use-form').onsubmit = saveUsage;
-  if (location.hash === '#usage') tab('use');
-  refresh();
+  $('form').onsubmit = send;
+  $('form').addEventListener('input', () => { if ($('msg').classList.contains('err')) msg(''); });
+  load();
 }
 
-// Every project anyone has sent shows here; with none yet, it's just the name box.
-function fillProjects() {
-  opt($('project'), [...CFG.projects.map(p => p.name), {value: '__other', label: 'New project…'}], 'Choose a project');
-  $('pick-wrap').hidden = !CFG.projects.length;
-}
-async function reloadProjects() {
-  try { CFG.projects = (await api('/api/config')).projects; fillProjects(); } catch (e) {}
-}
-
-function tab(which) {
-  $('tab-proj').setAttribute('aria-selected', which === 'proj');
-  $('tab-use').setAttribute('aria-selected', which === 'use');
-  $('pane-proj').hidden = which !== 'proj';
-  $('pane-use').hidden = which !== 'use';
-  history.replaceState(null, '', which === 'use' ? '#usage' : '#');
-}
-
-// ---- what this person has sent this week ----
-async function refresh() {
+// ---- load what this person has for the week ----
+async function load() {
+  $('done').hidden = true;
   const name = $('name').value, week = $('week').value;
-  MINE = {updates: [], usage: null, lastBudget: null};
-  if (name) {
-    try { MINE = await api(`/api/mine?name=${encodeURIComponent(name)}&week=${week}`); }
-    catch (e) { msg($('proj-msg'), e.message); }
+  $('form').hidden = $('sendbar').hidden = !name;
+  if (!name) return;
+  msg('');
+  try { MINE = await api(`/api/mine?name=${encodeURIComponent(name)}&week=${week}`); }
+  catch (e) { msg(e.message, 'err'); return; }
+  $('projects').innerHTML = ''; cardSeq = 0;
+  const st = $('state');
+  if (MINE.updates.length) {
+    MINE.updates.forEach(u => addCard(u));
+    st.textContent = `You sent this week's update on ${new Date(MINE.usage?.updatedAt || MINE.updates[0].updatedAt).toLocaleString()}. Change anything and send again. Removing a project here removes it from your update.`;
+    st.hidden = false;
+  } else {
+    const carry = MINE.lastProjects.filter(u => u.status !== 'Completed');
+    carry.forEach(u => addCard({project: u.project, type: u.type, status: u.status}));
+    if (!carry.length) addCard();
+    st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one, and remove any you didn't work on this week.` : '';
+    st.hidden = !carry.length;
   }
-  resetProject(true);
-  renderSent();
   fillUsage();
+  $('send').textContent = MINE.updates.length || MINE.usage ? 'Send updated version' : 'Send weekly update';
 }
 
-function renderSent() {
-  const ups = MINE.updates;
-  $('sent-card').hidden = !ups.length;
-  $('proj-count').textContent = ups.length ? `(${ups.length})` : '';
-  $('use-tick').innerHTML = MINE.usage ? '<span class="tick">✓</span>' : '';
-  $('sent').innerHTML = ups.map(u => `<li><div class="grow"><strong>${esc(u.project)}</strong>
-      <div class="sub">${esc(u.status)} · ${u.type === 'Claude' ? 'Claude project' : 'Non-Claude project'}</div></div>
-      <button class="link" data-edit="${u.id}">Edit</button><button class="link danger" data-del="${u.id}">Delete</button></li>`).join('');
-  $('sent').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editProject(b.dataset.edit));
-  $('sent').querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteProject(b.dataset.del));
-}
-
-// ---- project update form ----
-function onProject() {
-  if (!CFG.projects.length) $('project').value = '__other';
-  const v = $('project').value;
-  $('other-wrap').hidden = v !== '__other';
-  const known = CFG.projects.find(p => p.name === v);
-  if (known && known.type) $('ptype').value = known.type;
-  showConditional();
-}
-function showConditional() {
-  const t = $('ptype').value;
-  $('saved-wrap').hidden = t !== 'Claude';
-  $('help-wrap').hidden = t !== 'Non-Claude';
-}
-function resetProject(keepMsg) {
-  editing = null;
-  $('proj-form').reset();
-  $('proj-title').textContent = MINE.updates.length ? 'Add another project update' : 'Add a project update';
-  $('proj-save').textContent = 'Save update';
-  $('proj-cancel').hidden = true;
-  onProject();
-  if (!keepMsg) msg($('proj-msg'), '');
-}
-function editProject(id) {
-  const u = MINE.updates.find(x => x.id === id);
-  if (!u) return;
-  editing = id;
-  const known = CFG.projects.some(p => p.name === u.project);
-  $('project').value = known ? u.project : '__other';
-  $('other').value = known ? '' : u.project;
-  $('other-wrap').hidden = known;
-  $('ptype').value = u.type;
-  $('status').value = u.status;
-  ['b1', 'b2', 'b3'].forEach((b, i) => $(b).value = u.progress[i] || '');
-  $('saved').value = u.timeSaved || '';
-  $('help').value = u.couldHelp || '';
-  showConditional();
-  $('proj-title').textContent = 'Edit: ' + u.project;
-  $('proj-save').textContent = 'Save changes';
-  $('proj-cancel').hidden = false;
-  msg($('proj-msg'), '');
-  $('proj-form').scrollIntoView({behavior: 'smooth', block: 'start'});
-}
-async function saveProject(ev) {
-  ev.preventDefault();
-  const name = $('name').value;
-  if (!name) return msg($('proj-msg'), 'Choose your name first (top of the page).');
-  const project = $('project').value === '__other' ? $('other').value.trim() : $('project').value;
-  const body = {
-    id: editing, name, week: $('week').value, project, type: $('ptype').value, status: $('status').value,
-    progress: ['b1', 'b2', 'b3'].map(b => $(b).value.trim()).filter(Boolean),
-    timeSaved: $('saved').value, couldHelp: $('help').value.trim(),
-  };
-  const btn = $('proj-save'); btn.disabled = true;
-  try {
-    const r = await api('/api/updates', {method: 'POST', body: JSON.stringify(body)});
-    MINE = await api(`/api/mine?name=${encodeURIComponent(name)}&week=${body.week}`);
-    if (!CFG.projects.some(p => p.name.toLowerCase() === r.update.project.toLowerCase())) await reloadProjects();
-    resetProject();
-    renderSent();
-    msg($('proj-msg'), `Saved ${r.update.project}${r.replaced && !body.id ? ' (replaced your earlier update for it)' : ''}. Add another project, or switch to Weekly usage.`, true);
-  } catch (e) { msg($('proj-msg'), e.message); }
-  btn.disabled = false;
-}
-async function deleteProject(id) {
-  const u = MINE.updates.find(x => x.id === id);
-  if (!u) return;
-  const li = document.querySelector(`[data-del="${id}"]`).closest('li');
-  if (li.dataset.confirm !== '1') {   // two-click confirm, no browser dialog
-    li.dataset.confirm = '1';
-    li.querySelector('[data-del]').textContent = 'Click again to delete';
-    return;
+// ---- project cards ----
+function addCard(u = {}) {
+  const id = ++cardSeq, el = document.createElement('div');
+  el.className = 'card proj';
+  const known = !u.project || CFG.projects.some(p => p.name.toLowerCase() === u.project.toLowerCase());
+  const learned = CFG.projects.length > 0;
+  el.innerHTML = `
+    <div class="proj-head"><h3>Project</h3><button type="button" class="remove">Remove</button></div>
+    <div class="pick"${learned ? '' : ' hidden'}><label for="p${id}">Project</label>
+      <select id="p${id}" class="f-pick">${options([...CFG.projects.map(p => p.name), {value: '__new', label: 'New project…'}], 'Choose a project')}</select></div>
+    <div class="newname"${learned ? ' hidden' : ''}><label for="n${id}">${learned ? 'New project name' : 'Project name'}</label>
+      <p class="hint">Keep it short and use the same name every week, so the report can follow it.</p>
+      <input id="n${id}" class="f-new" maxlength="120" placeholder="e.g. Commission Audit Tool"></div>
+    <div class="row">
+      <div><label for="t${id}">Project type</label><select id="t${id}" class="f-type">${options([{value: 'Claude', label: 'Claude project'}, {value: 'Non-Claude', label: 'Non-Claude project'}], 'Choose')}</select></div>
+      <div><label for="s${id}">Status</label><select id="s${id}" class="f-status">${options(CFG.statuses, 'Choose')}</select></div>
+    </div>
+    <span class="lbl">Progress and next steps</span>
+    <p class="hint">One to three short bullets: what moved this week and what's next.</p>
+    ${[0, 1, 2].map(i => `<div class="bullet"><b>•</b><textarea class="f-b" rows="2" maxlength="500"${i ? ' placeholder="Optional"' : ''} aria-label="Bullet ${i + 1}"></textarea></div>`).join('')}
+    <div class="saved" hidden><label for="h${id}">Time saved with Claude this week</label><select id="h${id}" class="f-saved">${options(CFG.timeSaved, 'Choose')}</select></div>
+    <div class="help" hidden><label for="c${id}">Anything Claude could have helped with? <span class="opt">(optional)</span></label>
+      <input id="c${id}" class="f-help" maxlength="300" placeholder="A step that could have been faster with Claude"></div>
+    <div class="card-err" hidden></div>`;
+  const q = s => el.querySelector(s);
+  if (u.project) {
+    if (known) q('.f-pick').value = CFG.projects.find(p => p.name.toLowerCase() === u.project.toLowerCase()).name;
+    else { q('.f-pick').value = '__new'; q('.f-new').value = u.project; }
   }
-  try {
-    await api('/api/updates/' + id, {method: 'DELETE'});
-    MINE.updates = MINE.updates.filter(x => x.id !== id);
-    if (editing === id) resetProject();
-    renderSent();
-    msg($('proj-msg'), `Deleted ${u.project}.`, true);
-  } catch (e) { msg($('proj-msg'), e.message); }
+  q('.f-type').value = u.type || '';
+  q('.f-status').value = u.status || '';
+  el.querySelectorAll('.f-b').forEach((t, i) => t.value = (u.progress || [])[i] || '');
+  q('.f-saved').value = u.timeSaved || '';
+  q('.f-help').value = u.couldHelp || '';
+  const sync = () => {
+    q('.newname').hidden = learned && q('.f-pick').value !== '__new';
+    q('.saved').hidden = q('.f-type').value !== 'Claude';
+    q('.help').hidden = q('.f-type').value !== 'Non-Claude';
+  };
+  q('.f-pick').onchange = () => {
+    const p = CFG.projects.find(p => p.name === q('.f-pick').value);
+    if (p && p.type) q('.f-type').value = p.type;
+    sync();
+  };
+  q('.f-type').onchange = sync;
+  q('.remove').onclick = () => { el.remove(); renumber(); };
+  const clear = () => { el.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid')); q('.card-err').hidden = true; };
+  el.addEventListener('input', clear);
+  el.addEventListener('change', clear);
+  sync();
+  $('projects').append(el);
+  renumber();
+  return el;
+}
+function renumber() {
+  const cards = [...document.querySelectorAll('.proj')];
+  cards.forEach((c, i) => { c.querySelector('h3').textContent = `Project ${i + 1}`; c.querySelector('.remove').hidden = cards.length === 1; });
+}
+function readCard(el) {
+  const q = s => el.querySelector(s);
+  const isNew = !CFG.projects.length || q('.f-pick').value === '__new';
+  return {
+    project: (isNew ? q('.f-new').value : q('.f-pick').value).trim(),
+    type: q('.f-type').value, status: q('.f-status').value,
+    progress: [...el.querySelectorAll('.f-b')].map(t => t.value.trim()).filter(Boolean),
+    timeSaved: q('.f-saved').value, couldHelp: q('.f-help').value.trim(),
+  };
+}
+function checkCard(el, d) {   // the server's rules, checked here to point at the field
+  const q = s => el.querySelector(s), bad = [];
+  const isNew = !CFG.projects.length || q('.f-pick').value === '__new';
+  if (!d.project) bad.push([isNew ? q('.f-new') : q('.f-pick'), 'Choose or name the project.']);
+  if (!d.type) bad.push([q('.f-type'), 'Choose the project type.']);
+  if (!d.status) bad.push([q('.f-status'), 'Choose a status.']);
+  if (!d.progress.length) bad.push([q('.f-b'), 'Add at least one line of progress.']);
+  if (d.type === 'Claude' && !d.timeSaved) bad.push([q('.f-saved'), 'Choose how much time Claude saved.']);
+  return bad;
+}
+function cardError(el, text, fields = []) {
+  fields.forEach(f => f.classList.add('invalid'));
+  const e = el.querySelector('.card-err'); e.textContent = text; e.hidden = !text;
 }
 
-// ---- usage form ----
+// ---- usage ----
 function incValue() { const r = document.querySelector('input[name=inc]:checked'); return r ? r.value === 'yes' : null; }
+function clearUsage() { document.querySelectorAll('#usage .invalid').forEach(x => x.classList.remove('invalid')); $('usage-err').hidden = true; }
+$('usage').addEventListener('input', clearUsage);
+$('usage').addEventListener('change', clearUsage);
 function fillUsage() {
   const u = MINE.usage;
   shotData = null; $('shot').value = ''; $('shot-preview').style.display = 'none';
-  msg($('use-msg'), '');
   $('spend').value = u ? u.spend : '';
   $('budget').value = u ? u.budget : (MINE.lastBudget ?? '');
   document.querySelectorAll('input[name=inc]').forEach(r => r.checked = u ? (r.value === 'yes') === u.increaseRequested : false);
@@ -335,13 +305,24 @@ function fillUsage() {
   $('inc-amount').value = u?.increase?.amount ?? '';
   $('inc-status').value = u?.increase?.status ?? '';
   $('inc-reason').value = u?.increase?.reason ?? '';
-  $('use-state').textContent = u ? `Sent ${new Date(u.updatedAt).toLocaleString()}. Change anything below and save again to update it.`
-    : (MINE.lastBudget != null ? 'Budget is pre-filled from your last submission. Change it if it has changed.' : '');
   $('shot-state').textContent = u ? 'Your screenshot is on file. Upload a new one only to replace it.' : '';
-  $('use-save').textContent = u ? 'Update usage' : 'Save usage';
+  clearUsage();
+}
+function checkUsage() {
+  const bad = [], inc = incValue();
+  if (num($('spend').value) === null) bad.push([$('spend'), 'Enter your spend so far this month.']);
+  if (!(num($('budget').value) > 0)) bad.push([$('budget'), 'Enter your monthly budget.']);
+  if (inc === null) bad.push([$('inc-seg'), 'Say whether you asked for a budget increase.']);
+  if (inc) {
+    if (!(num($('inc-amount').value) > 0)) bad.push([$('inc-amount'), 'Enter the budget you asked for.']);
+    if (!$('inc-status').value) bad.push([$('inc-status'), 'Choose the request status.']);
+    if (!$('inc-reason').value.trim()) bad.push([$('inc-reason'), 'Give the reason for the increase.']);
+  }
+  if (!shotData && !MINE.usage) bad.push([$('shot'), 'Attach your usage screenshot.']);
+  return bad;
 }
 
-// Big screenshots are shrunk to a 2000px-wide JPEG before upload.
+// Big screenshots are shrunk to a 2000px-wide JPEG before sending.
 async function onShot() {
   shotData = null;
   const f = $('shot').files[0];
@@ -349,39 +330,68 @@ async function onShot() {
   try {
     const url = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => bad(r.error); r.readAsDataURL(f); });
     const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('That file isn\'t an image this browser can read.')); i.src = url; });
-    const okType = /^data:image\/(png|jpeg|webp);/.test(url);
-    if (okType && f.size <= 1.5e6 && img.naturalWidth <= 2400) { shotData = url; }
+    if (/^data:image\/(png|jpeg|webp);/.test(url) && f.size <= 1.5e6 && img.naturalWidth <= 2400) shotData = url;
     else {
-      const scale = Math.min(1, 2000 / img.naturalWidth);
-      const c = document.createElement('canvas');
+      const scale = Math.min(1, 2000 / img.naturalWidth), c = document.createElement('canvas');
       c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       shotData = c.toDataURL('image/jpeg', 0.88);
     }
     $('shot-preview').src = shotData; $('shot-preview').style.display = 'block';
-    msg($('use-msg'), '');
-  } catch (e) { msg($('use-msg'), e.message); $('shot').value = ''; }
+  } catch (e) { $('shot').value = ''; $('usage-err').textContent = e.message; $('usage-err').hidden = false; }
 }
-async function saveUsage(ev) {
+
+// ---- send everything ----
+async function send(ev) {
   ev.preventDefault();
-  const name = $('name').value;
-  if (!name) return msg($('use-msg'), 'Choose your name first (top of the page).');
+  const cards = [...document.querySelectorAll('.proj')];
+  // a blank extra card is skipped rather than blocking the send
+  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.status; });
+  let firstBad = null;
+  used.forEach(c => {
+    const bad = checkCard(c, readCard(c));
+    cardError(c, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
+    if (bad.length && !firstBad) firstBad = c;
+  });
+  const names = used.map(c => readCard(c).project.toLowerCase());
+  used.forEach((c, i) => { if (names[i] && names.indexOf(names[i]) !== i) { cardError(c, 'This project is already listed above. Combine them into one.'); firstBad = firstBad || c; } });
+  const ub = checkUsage();
+  ub.forEach(b => b[0].classList.add('invalid'));
+  $('usage-err').textContent = ub.map(b => b[1]).join(' '); $('usage-err').hidden = !ub.length;
+  if (ub.length && !firstBad) firstBad = $('usage');
+  if (firstBad) { msg('A few things need fixing. They\'re marked in red.', 'err'); firstBad.scrollIntoView({behavior: 'smooth', block: 'center'}); return; }
+
   const inc = incValue();
   const body = {
-    name, week: $('week').value, spend: num($('spend').value), budget: num($('budget').value),
-    increaseRequested: inc, increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
-    screenshot: shotData,
+    name: $('name').value, week: $('week').value, projects: used.map(readCard),
+    usage: {spend: num($('spend').value), budget: num($('budget').value), increaseRequested: inc,
+            increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
+            screenshot: shotData},
   };
-  if (!shotData && !MINE.usage) return msg($('use-msg'), 'Attach your usage screenshot.');
-  const btn = $('use-save'); btn.disabled = true; btn.textContent = 'Saving…';
+  const btn = $('send'); btn.disabled = true; msg('Sending…');
   try {
-    const r = await api('/api/usage', {method: 'POST', body: JSON.stringify(body)});
-    MINE.usage = r.usage;
-    fillUsage(); renderSent();
-    const pct = r.usage.budget ? Math.round(100 * r.usage.spend / r.usage.budget) : 0;
-    msg($('use-msg'), `Saved. You've used ${pct}% of your ${money(r.usage.budget)} budget this month.${MINE.updates.length ? ' You\'re done for the week.' : ' Don\'t forget your project updates.'}`, true);
-  } catch (e) { msg($('use-msg'), e.message); btn.textContent = MINE.usage ? 'Update usage' : 'Save usage'; }
+    const r = await api('/api/submit', {method: 'POST', body: JSON.stringify(body)});
+    try { CFG.projects = (await api('/api/config')).projects; } catch (e) {}
+    showDone(r);
+  } catch (e) {
+    (e.body?.errors || []).forEach(x => {
+      if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
+      else if (x.project != null && used[x.project]) cardError(used[x.project], x.error);
+    });
+    msg(e.message, 'err');
+  }
   btn.disabled = false;
+}
+
+function showDone(r) {
+  const u = r.usage, pct = u.budget ? Math.round(100 * u.spend / u.budget) : 0;
+  $('done').innerHTML = `<div class="big">✓</div><h2 style="margin:10px 0 4px">${r.resent ? 'Update re-sent' : 'Sent'}. Thanks, ${esc($('name').value.split(' ')[0])}!</h2>
+    <p class="hint" style="margin:0">Week ending ${esc(fmtWeek($('week').value))}. You've used ${pct}% of your ${money(u.budget)} budget this month.</p>
+    <ul>${r.updates.map(x => `<li><strong>${esc(x.project)}</strong>: ${esc(x.status)}</li>`).join('')}</ul>
+    <p style="margin:18px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
+  $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;
+  $('edit').onclick = load;
+  scrollTo({top: 0, behavior: 'smooth'});
 }
 
 init();

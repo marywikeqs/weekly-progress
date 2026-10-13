@@ -92,9 +92,7 @@ def build(data: dict, week: str) -> dict:
     participation = {
         "roster": len(roster),
         "complete": sorted(n for n in roster if n in did_proj and n in did_use),
-        "missingProjects": sorted(n for n in roster if n not in did_proj),
-        "missingUsage": sorted(n for n in roster if n not in did_use),
-        "nobody": sorted(n for n in roster if n not in did_proj and n not in did_use),
+        "missing": sorted(n for n in roster if n not in did_proj or n not in did_use),
     }
 
     # projects, grouped by name; most urgent first
@@ -163,9 +161,8 @@ def _delta(now, before, has_prev, unit=""):
 def render_text(r: dict, base_url: str = "") -> str:
     c, l, p, hp = r["cur"], r["last"], r["participation"], r["hasPrev"]
     lines = [f"*Weekly Progress — week ending {nice_date(r['week'])}*", ""]
-    lines.append(f"*Participation:* {len(p['complete'])} of {p['roster']} fully submitted"
-                 + (f" · no project update: {', '.join(p['missingProjects'])}" if p["missingProjects"] else "")
-                 + (f" · no usage: {', '.join(p['missingUsage'])}" if p["missingUsage"] else ""))
+    lines.append(f"*Participation:* {len(p['complete'])} of {p['roster']} sent their update"
+                 + (f" · hasn't sent: {', '.join(p['missing'])}" if p["missing"] else ""))
     lines.append(f"*Projects:* {c['projects']}{_delta(c['projects'], l['projects'], hp)} — "
                  f"{c['claude']} Claude · {c['nonClaude']} non-Claude · "
                  + " · ".join(f"{n} {s}" for s, n in c["byStatus"].items() if n))
@@ -279,7 +276,7 @@ def render_html(r: dict, weeks: list) -> str:
 
     spend_note = (f"{100 * c['spend'] / c['budget']:.0f}% of {money(c['budget'])} budget" if c["budget"] else "no usage submitted")
     o.append('<div class="kpis">'
-             + _kpi(f"{len(p['complete'])}/{p['roster']}", "fully submitted",
+             + _kpi(f"{len(p['complete'])}/{p['roster']}", "sent their update",
                     _wow(c["submitted"], l["submitted"], hp, lambda v: f"{v:g} {'person' if v == 1 else 'people'}") if hp else f"{c['submitted']} submitted something")
              + _kpi(str(c["projects"]), "projects reported", f"{c['claude']} Claude · {c['nonClaude']} non-Claude")
              + _kpi(str(c["atRisk"]), "at risk or blocked", _wow(c["atRisk"], l["atRisk"], hp))
@@ -290,8 +287,8 @@ def render_html(r: dict, weeks: list) -> str:
     # participation
     def names(ns):
         return '<div class="chips">' + "".join(f'<span class="chip">{escape(n)}</span>' for n in ns) + "</div>" if ns else '<p class="empty">Everyone</p>'
-    o.append(f"""<section><h2>Participation</h2><p class="small muted">{len(p['complete'])} of {p['roster']} people sent both a project update and their usage.</p>
-<div class="cols"><div><h3>No project update</h3>{names(p['missingProjects'])}</div><div><h3>No usage form</h3>{names(p['missingUsage'])}</div></div></section>""")
+    o.append(f"""<section><h2>Participation</h2><p class="small muted">{len(p['complete'])} of {p['roster']} people sent their weekly update.</p>
+<h3>Hasn't sent yet</h3>{names(p['missing']) if p['missing'] else '<p class="empty">Nobody. Everyone is in.</p>'}</section>""")
 
     # projects
     o.append('<section><h2>Projects</h2><div class="statuses">'

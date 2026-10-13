@@ -79,7 +79,6 @@ APP_GID = int(os.environ.get("APP_GID", os.environ.get("APP_UID", "10001")))
 
 MAX_BODY = 256 * 1024
 MAX_SHOT = 8 * 1024 * 1024          # the page shrinks big screenshots before sending
-ID_RX = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 SHOT_RX = re.compile(r"^[a-f0-9]{20}\.(png|jpg|webp)$")
 LOCK = threading.Lock()
 
@@ -444,9 +443,12 @@ class Handler(BaseHTTPRequestHandler):
                 ups = [u for u in DATA["updates"] if u["name"] == name and u["week"] == week]
                 use = next((u for u in DATA["usage"] if u["name"] == name and u["week"] == week), None)
                 earlier = sorted((u for u in DATA["usage"] if u["name"] == name and u["week"] < week), key=lambda u: u["week"])
-            # Last week's budget pre-fills this week's; budgets rarely change.
+                prev_week = max((u["week"] for u in DATA["updates"] if u["name"] == name and u["week"] < week), default=None)
+                prev = [u for u in DATA["updates"] if u["name"] == name and u["week"] == prev_week]
+            # A new week starts from last week's projects and budget.
             return self.send_json(200, {"updates": ups, "usage": use,
-                                        "lastBudget": earlier[-1]["budget"] if earlier else None})
+                                        "lastBudget": earlier[-1]["budget"] if earlier else None,
+                                        "lastWeek": prev_week, "lastProjects": prev})
 
         # admin only from here
         if path in ("/admin", "/admin.html"):
@@ -499,63 +501,78 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json(503, {"error": "The server couldn't save that. Its storage isn't writable."})
 
     def do_POST(self):
-        path = urlsplit(self.path).path
-        if path == "/api/updates":
-            if not self.gate("team"):
-                return
-            body = self.read_json() or {}
-            with LOCK:
-                u = clean_update(body)
+        """The whole week in one send: every project update plus usage.
+
+        Validates everything first and saves nothing unless all of it is
+        good. The projects sent become this person's full list for the week
+        (one left off is deleted); a resend just updates."""
+        if urlsplit(self.path).path != "/api/submit":
+            return self.send_json(404, {"error": "Not found"})
+        if not self.gate("team"):
+            return
+        body = self.read_json(MAX_SHOT * 4 // 3 + MAX_BODY) or {}
+        name, week = str(body.get("name", "")).strip(), body.get("week")
+        with LOCK:
+            projects, errors, seen = [], [], set()
+            for i, d in enumerate(body.get("projects") or []):
+                u = clean_update({**d, "name": name, "week": week})
                 if isinstance(u, str):
-                    return self.send_json(400, {"error": u})
-                rows = DATA["updates"]
-                key = (u["name"], u["week"], u["project"].lower())
-                cur = next((r for r in rows if r["id"] == body.get("id")), None) if body.get("id") else None
-                clash = next((r for r in rows if (r["name"], r["week"], r["project"].lower()) == key and r is not cur), None)
-                if cur is None:
-                    cur = clash          # same project resubmitted: replace it
-                elif clash is not None:
-                    return self.send_json(409, {"error": f"You already have an update for {u['project']} this week. Edit that one instead."})
-                before = dict(cur) if cur else None
-                if cur:
-                    cur.update(u, updatedAt=now())
-                    rec = cur
+                    errors.append({"project": i, "error": u})
+                elif u["project"].lower() in seen:
+                    errors.append({"project": i, "error": f"{u['project']} is in here twice. Combine them into one."})
                 else:
-                    rec = {"id": "u-" + secrets.token_hex(5), **u, "submittedAt": now(), "updatedAt": now()}
-                    rows.append(rec)
-                if not write("updates"):
-                    return self.unsaved()
-                log_change("update" if before else "create", "project", before, rec)
-            return self.send_json(200 if before else 201, {"update": rec, "replaced": bool(before)})
-        if path == "/api/usage":
-            if not self.gate("team"):
-                return
-            body = self.read_json(MAX_SHOT * 4 // 3 + MAX_BODY) or {}
-            with LOCK:
-                u = clean_usage(body)
-                if isinstance(u, str):
-                    return self.send_json(400, {"error": u})
-                cur = next((r for r in DATA["usage"] if r["name"] == u["name"] and r["week"] == u["week"]), None)
-                shot = cur.get("screenshot") if cur else None
-                if body.get("screenshot"):
-                    shot = save_shot(body["screenshot"])
-                    if not shot:
-                        return self.send_json(400, {"error": "That screenshot couldn't be read. Upload a PNG or JPG image."})
+                    seen.add(u["project"].lower())
+                    projects.append(u)
+            if not projects and not errors:
+                errors.append({"project": None, "error": "Add at least one project."})
+            usage = clean_usage({**(body.get("usage") or {}), "name": name, "week": week})
+            if isinstance(usage, str):
+                errors.append({"usage": True, "error": usage})
+            cur_use = next((r for r in DATA["usage"] if r["name"] == name and r["week"] == week), None)
+            shot = cur_use.get("screenshot") if cur_use else None
+            if not errors and not (body.get("usage") or {}).get("screenshot") and not shot:
+                errors.append({"usage": True, "error": "Attach your usage screenshot."})
+            if errors:
+                # name / week problems repeat on every part; say them once
+                top = next((e["error"] for e in errors if e["error"] in ("Pick your name.", "Pick the week ending date.")), None)
+                return self.send_json(400, {"error": top or errors[0]["error"], "errors": [] if top else errors})
+            if (body.get("usage") or {}).get("screenshot"):
+                shot = save_shot(body["usage"]["screenshot"])
                 if not shot:
-                    return self.send_json(400, {"error": "Attach your usage screenshot."})
-                u["screenshot"] = shot
-                before = dict(cur) if cur else None
-                if cur:
-                    cur.update(u, updatedAt=now())
-                    rec = cur
+                    return self.send_json(400, {"error": "That screenshot couldn't be read. Upload a PNG or JPG image.",
+                                                "errors": [{"usage": True, "error": "That screenshot couldn't be read."}]})
+            usage["screenshot"] = shot
+
+            # projects: replace this person's week with what was sent
+            stamp = now()
+            old = {r["project"].lower(): r for r in DATA["updates"] if r["name"] == name and r["week"] == week}
+            keep = [r for r in DATA["updates"] if not (r["name"] == name and r["week"] == week)]
+            saved = []
+            for u in projects:
+                prev = old.pop(u["project"].lower(), None)
+                if prev:
+                    rec = {**prev, **u, "updatedAt": stamp}
+                    if {k: prev.get(k) for k in u} != u:
+                        log_change("update", "project", prev, rec)
                 else:
-                    rec = {"id": "s-" + secrets.token_hex(5), **u, "submittedAt": now(), "updatedAt": now()}
-                    DATA["usage"].append(rec)
-                if not write("usage"):
-                    return self.unsaved()
-                log_change("update" if before else "create", "usage", before, rec)
-            return self.send_json(200 if before else 201, {"usage": rec, "replaced": bool(before)})
-        self.send_json(404, {"error": "Not found"})
+                    rec = {"id": "u-" + secrets.token_hex(5), **u, "submittedAt": stamp, "updatedAt": stamp}
+                    log_change("create", "project", None, rec)
+                saved.append(rec)
+            for gone in old.values():
+                log_change("delete", "project", gone, None)
+            before_updates, before_usage = DATA["updates"], list(DATA["usage"])
+            DATA["updates"] = keep + saved
+            if cur_use:
+                rec_use = {**cur_use, **usage, "updatedAt": stamp}
+                DATA["usage"] = [rec_use if r is cur_use else r for r in DATA["usage"]]
+            else:
+                rec_use = {"id": "s-" + secrets.token_hex(5), **usage, "submittedAt": stamp, "updatedAt": stamp}
+                DATA["usage"].append(rec_use)
+            if not (write("updates") and write("usage")):
+                DATA["updates"], DATA["usage"] = before_updates, before_usage
+                return self.unsaved()
+            log_change("update" if cur_use else "create", "usage", cur_use, rec_use)
+        return self.send_json(200, {"updates": saved, "usage": rec_use, "resent": bool(cur_use)})
 
     def do_PUT(self):
         if urlsplit(self.path).path != "/api/admin/config":
@@ -574,22 +591,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.unsaved()
             log_change("update", "config", before, cfg)
         self.send_json(200, {"config": cfg})
-
-    def do_DELETE(self):
-        m = re.fullmatch(r"/api/updates/([^/]+)", urlsplit(self.path).path)
-        if not m or not ID_RX.match(m.group(1)):
-            return self.send_json(404, {"error": "Not found"})
-        if not self.gate("team"):
-            return
-        with LOCK:
-            cur = next((r for r in DATA["updates"] if r["id"] == m.group(1)), None)
-            if cur:
-                DATA["updates"].remove(cur)
-                if not write("updates"):
-                    DATA["updates"].append(cur)
-                    return self.unsaved()
-                log_change("delete", "project", cur, None)
-        self.send_json(200, {"deleted": bool(cur)})
 
 
 def main():

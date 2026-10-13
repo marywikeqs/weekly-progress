@@ -40,27 +40,58 @@ try:
                 pg = ctx.new_page()
                 pg.on("console", lambda m: m.type == "error" and problems.append(f"console: {m.text}"))
                 pg.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
-                for name, path in (("form", "/"), ("usage", "/?u=1#usage"), ("report", "/report"), ("admin", "/admin")):
+                for name, path in (("form", "/"), ("report", "/report"), ("admin", "/admin")):
                     pg.goto(BASE + path)
                     pg.wait_for_load_state("networkidle")
-                    if name in ("form", "usage"):
-                        pg.select_option("#name", "Avery Test")
-                        pg.wait_for_timeout(300)
-                    if name == "usage":
-                        pg.check("input[name=inc][value=yes]")
-                        assert pg.is_visible("#inc-reason"), "increase fields show on Yes"
                     if name == "form":
-                        pg.select_option("#project", "__other")
-                        assert pg.is_visible("#other"), "Other box shows"
-                        pg.select_option("#ptype", "Non-Claude")
-                        assert pg.is_visible("#help") and not pg.is_visible("#saved"), "non-Claude conditional"
-                        pg.select_option("#ptype", "Claude")
-                        assert pg.is_visible("#saved") and not pg.is_visible("#help"), "Claude conditional"
+                        pg.select_option("#name", "Avery Test"); pg.wait_for_timeout(400)
+                        assert pg.locator(".proj").count() == 2, "Avery's sent week loads as 2 cards"
                     sw = pg.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
                     if sw > 0:
                         problems.append(f"{name} {label} {scheme}: scrolls sideways by {sw}px")
                     pg.screenshot(path=str(OUT / f"{name}-{label}-{scheme}.png"), full_page=True)
                 ctx.close()
+        # the whole flow once, as Drew (nothing sent yet)
+        ctx = b.new_context(viewport={"width": 390, "height": 844}, http_credentials={"username": "team", "password": "t-pass"})
+        pg = ctx.new_page()
+        pg.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
+        pg.goto(BASE + "/"); pg.wait_for_load_state("networkidle")
+        check = lambda cond, label: None if cond else problems.append("flow: " + label)
+        check(pg.get_attribute("#week", "step") == "7", "date picker steps by week")
+        wk = pg.input_value("#week")
+        from datetime import date as _d, timedelta as _t
+        wed = (_d.fromisoformat(wk) - _t(days=9)).isoformat()      # Wednesday of last week
+        pg.fill("#week", wed); pg.dispatch_event("#week", "change"); pg.wait_for_timeout(200)
+        check(pg.input_value("#week") == (_d.fromisoformat(wk) - _t(days=7)).isoformat(), "a Wednesday snaps to that week's Friday")
+        check(pg.is_visible("#week-note"), "snap explained")
+        pg.fill("#week", wk); pg.dispatch_event("#week", "change")
+        pg.select_option("#name", "Drew Test"); pg.wait_for_timeout(400)
+        check(pg.locator(".proj").count() == 1, "one blank card to start")
+        pg.click("#send"); pg.wait_for_timeout(300)
+        check(pg.locator(".invalid").count() >= 5, "empty send marks fields in red")
+        c1 = pg.locator(".proj").nth(0)
+        c1.locator(".f-pick").select_option("__new"); c1.locator(".f-new").fill("Pipeline Hygiene")
+        c1.locator(".f-type").select_option("Claude"); c1.locator(".f-status").select_option("In progress")
+        c1.locator(".f-b").first.fill("Cleaned stale opps"); c1.locator(".f-saved").select_option("1-3 hrs")
+        pg.click("#add")
+        c2 = pg.locator(".proj").nth(1)
+        c2.locator(".f-pick").select_option("Board Deck Automation")
+        check(c2.locator(".f-type").input_value() == "Claude", "picking a known project fills its type")
+        c2.locator(".f-type").select_option("Non-Claude")
+        check(c2.locator(".f-help").is_visible() and not c2.locator(".f-saved").is_visible(), "non-Claude shows the could-help box")
+        c2.locator(".f-status").select_option("At risk"); c2.locator(".f-b").first.fill("Waiting on data")
+        pg.click("#add")   # a third, left blank: skipped on send
+        pg.fill("#spend", "75"); pg.fill("#budget", "250"); pg.check("input[name=inc][value=no]")
+        pg.set_input_files("#shot", str(OUT / "form-phone-light.png"))
+        pg.wait_for_timeout(500)
+        pg.screenshot(path=str(OUT / "flow-filled.png"), full_page=True)
+        pg.click("#send"); pg.wait_for_timeout(1200)
+        check(pg.is_visible("#done"), "send shows the done screen: " + (pg.text_content("#msg") or ""))
+        pg.screenshot(path=str(OUT / "flow-done.png"), full_page=True)
+        pg.click("#edit"); pg.wait_for_timeout(500)
+        check(pg.locator(".proj").count() == 2, "Make a change reloads both projects")
+        ctx.close()
+
         # print layout of the report
         ctx = b.new_context(http_credentials={"username": "admin", "password": "a-pass"})
         pg = ctx.new_page(); pg.goto(BASE + "/report"); pg.wait_for_load_state("networkidle")
