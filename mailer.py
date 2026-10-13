@@ -110,7 +110,7 @@ def html(r: dict, note: str = "") -> str:
     link = f"{PUBLIC_URL}/report?week={r['week']}"
     h2 = f'style="font-size:16px;margin:24px 0 8px;color:{INK}"'
     small = f'style="font-size:13px;color:{MUTED};margin:2px 0"'
-    o = [f'<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:{INK};max-width:640px">']
+    o = [f'<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:{INK};max-width:760px">']
     if note:
         o.append(f'<p style="background:#fff2df;color:{AMBER};padding:8px 12px;border-radius:6px;margin:0 0 16px">{escape(note)}</p>')
     o.append(f'<div style="background:{report.ACCENT};color:#fff;border-radius:10px;padding:16px 20px"><div style="font-size:20px;font-weight:bold">Weekly digest</div>'
@@ -167,27 +167,35 @@ def html(r: dict, note: str = "") -> str:
     ul = 'style="margin:0;padding-left:18px"'
     if not r["people"]:
         o.append(f'<p {small}>Nothing sent this week.</p>')
+    # Full breakdown: people side by side, two per row (tables, so Outlook and Gmail keep the grid)
+    cards = []
     for pp in r["people"]:
         col = pc[pp["name"]]
         initials = "".join(w[0] for w in pp["name"].split()[:2]).upper()
-        o.append(f'<div style="margin:22px 0 0;border:1px solid {LINE};border-left:4px solid {col};border-radius:8px;padding:12px 14px;background:{tint(col, .04)}">'
-                 f'<div style="font-size:16px;font-weight:bold;margin-bottom:8px"><span style="display:inline-block;width:26px;height:26px;line-height:26px;'
-                 f'text-align:center;border-radius:13px;background:{col};color:#fff;font-size:11px;margin-right:8px">{escape(initials)}</span>{escape(pp["name"])}</div>')
+        b = [f'<div style="font-size:15px;font-weight:bold;margin-bottom:8px"><span style="display:inline-block;width:24px;height:24px;line-height:24px;'
+             f'text-align:center;border-radius:12px;background:{col};color:#fff;font-size:10px;margin-right:6px">{escape(initials)}</span>{escape(pp["name"])}</div>']
         for u in pp["projects"]:
             extra = (f'Time saved with Claude: {escape(u["timeSaved"])}' if u["type"] == "Claude" and u.get("timeSaved")
                      else (f'Claude could have helped: {escape(u["couldHelp"])}' if u.get("couldHelp") else ""))
-            o.append(f'<div style="margin:0 0 14px;padding-left:10px;border-left:3px solid {report.ACCENT if u["type"] == "Claude" else LINE}">'
-                     f'<b>{escape(u["project"])}</b> {pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'
+            b.append(f'<div style="margin:0 0 12px;padding-left:8px;border-left:3px solid {report.ACCENT if u["type"] == "Claude" else LINE}">'
+                     f'<b>{escape(u["project"])}</b><br>{pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'
                      f'{" " + pill("New this week", report.GREEN) if u["new"] else ""}'
-                     f'<div style="font-size:11px;font-weight:bold;color:{report.GREEN};margin-top:4px">PROGRESS</div><ul {ul}>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
-                     + (f'<div style="font-size:11px;font-weight:bold;color:{report.BLUE};margin-top:4px">NEXT STEPS</div><ul {ul}>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
+                     f'<div style="font-size:11px;font-weight:bold;color:{report.GREEN};margin-top:4px">PROGRESS</div><ul {ul}>' + "".join(f"<li>{escape(x)}</li>" for x in u["progress"]) + "</ul>"
+                     + (f'<div style="font-size:11px;font-weight:bold;color:{report.BLUE};margin-top:4px">NEXT STEPS</div><ul {ul}>' + "".join(f"<li>{escape(x)}</li>" for x in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div {small}>{extra}</div>' if extra else "") + "</div>")
         if pp["tasks"]:
-            o.append(f'<div style="font-size:11px;font-weight:bold;color:{col};margin-top:4px">OTHER WORK</div>'
+            b.append(f'<div style="font-size:11px;font-weight:bold;color:{col};margin-top:4px">OTHER WORK</div>'
                      + "".join(f'<div style="margin:4px 0">{pill(t["category"], report.colour_for(t["category"]))}'
                                f'{" " + pill("Claude saved " + t["timeSaved"], report.ACCENT) if t["claude"] else ""}{" — " + escape(t["note"]) if t.get("note") else ""}</div>'
                                for t in pp["tasks"]))
-        o.append("</div>")
+        cards.append(f'<td valign="top" width="50%" style="width:50%;border:1px solid {LINE};border-top:4px solid {col};border-radius:8px;padding:12px 14px;background:{tint(col, .04)}">'
+                     + "".join(b) + "</td>")
+    if len(cards) % 2:
+        cards.append('<td width="50%" style="width:50%"></td>')
+    if cards:
+        rows = ['<tr>' + cards[i] + '<td width="12" style="width:12px;font-size:0">&nbsp;</td>' + cards[i + 1] + '</tr>' for i in range(0, len(cards), 2)]
+        o.append('<table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:separate;table-layout:fixed;font-size:13px">'
+                 + '<tr><td colspan="3" height="12" style="height:12px;font-size:0">&nbsp;</td></tr>'.join(rows) + "</table>")
     if r["spend"]:
         o.append(f'<h2 {h2}>Usage and spend</h2><table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;width:100%">'
                  f'<tr style="color:{MUTED};font-size:12px"><td style="padding:4px 8px 4px 0;border-bottom:1px solid {LINE}">Name</td>'

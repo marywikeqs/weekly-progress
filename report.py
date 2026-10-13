@@ -287,7 +287,8 @@ h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .g-row .av{margin-top:1px}.g-proj{font-size:13.5px}.g-other{font-size:12.5px;color:var(--muted)}
 .late{font-size:12px;font-weight:600;color:var(--p1)}
 .g-help{margin:4px 0 0;padding-left:18px;font-size:13.5px}
-.pcard{border:1px solid var(--edge);border-left:4px solid var(--c);border-radius:10px;padding:12px 16px 4px;margin-top:16px;background:color-mix(in srgb,var(--c) 4%,var(--bg))}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;align-items:start}
+.pcard{border:1px solid var(--edge);border-top:4px solid var(--c);border-radius:10px;padding:12px 16px 4px;min-width:0;background:color-mix(in srgb,var(--c) 4%,var(--bg))}
 .pcard .row:last-child{border-bottom:0}
 .pcard .row ul li::marker{color:var(--c)}
 .phead{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
@@ -329,7 +330,7 @@ tr.flag td.pct{color:var(--p1);font-weight:600}tr.flag .bar>div{background:repea
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:6px;font-size:13px;display:none}
 @media (max-width:760px){.layout{grid-template-columns:1fr}aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
 nav{display:none}.actions{flex-direction:row;flex-wrap:wrap;border:0;margin:0;padding:0}.actions a,.actions button{width:auto;border:1px solid var(--edge)}
-main{padding:20px 16px 60px}.cols{grid-template-columns:1fr}}
+main{padding:20px 16px 60px}.cols,.pgrid{grid-template-columns:1fr}}
 @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.pcard{break-inside:avoid}aside,#toast{display:none}.layout{display:block}main{padding:0;max-width:none}body{font-size:11.5px}
 h2{break-after:avoid}.row{break-inside:avoid}.gallery{grid-template-columns:repeat(6,1fr)}.gallery img{height:70px}}
 """
@@ -373,8 +374,8 @@ def render_html(r: dict, weeks: list) -> str:
 <link rel="icon" href="data:,"><title>Weekly Progress Report</title><style>{STYLE}</style></head><body><div class="layout">
 <aside><div class="app"><i>✓</i>Weekly Progress</div>
 <form method="get" action="/report"><select name="week" onchange="this.form.submit()" aria-label="Week">{opts}</select></form>
-<nav><a href="#glance" style="--c:{ORANGE}"><i></i><em>At a glance</em><span></span></a>
-<a href="#people" style="--c:{GREEN}"><i></i><em>Participation</em><span>{len(p['complete'])}/{p['roster']}</span></a>
+<nav><a href="#people" style="--c:{GREEN}"><i></i><em>Participation</em><span>{len(p['complete'])}/{p['roster']}</span></a>
+<a href="#glance" style="--c:{ORANGE}"><i></i><em>At a glance</em><span></span></a>
 <a href="#digest" style="--c:{BLUE}"><i></i><em>The week, by person</em><span>{c['projects']} proj · {len(c['tasks'])} other</span></a>
 {"".join(f'<a href="#p-{i}" style="--c:{pc[pp["name"]]};padding-left:26px"><i></i><em>{escape(pp["name"])}</em><span>{len(pp["projects"]) + len(pp["tasks"])}</span></a>' for i, pp in enumerate(r["people"]))}
 <a href="#impact" style="--c:{ACCENT}"><i></i><em>Claude impact</em><span>{c['hours']:g} hrs</span></a>
@@ -391,6 +392,20 @@ def render_html(r: dict, weeks: list) -> str:
              + _stat(money(c["spend"]), "Claude spend this month", spend_note, GRAPE)
              + "</div>")
 
+    # participation
+    o.append(f'<h2 id="people" style="--c:{GREEN}">Participation <span>{len(p["complete"])} of {p["roster"]}</span></h2><div class="people">')
+    late = {x["name"]: x["at"] for x in p["late"]}
+    for n in p["complete"]:
+        o.append(f'<div class="row">{_av(n, pc[n], "sm")}<div class="body">{escape(n)}'
+                 + (f'<div class="late">Late: sent {escape(late[n])}</div>' if n in late else "")
+                 + '</div><span class="ring sent" title="Sent"></span></div>')
+    for n in p["missing"]:
+        o.append(f'<div class="row missing">{_av(n, pc[n], "sm off")}<div class="body">{escape(n)} <span class="label">hasn\'t sent yet</span>'
+                 + ('<div class="late">Past the deadline</div>' if p["overdue"] else "") + "</div></div>")
+    o.append("</div>")
+    o.append(f'<p class="note">Due {escape(p["deadline"])}. '
+             + ("Everyone is in" + (", on time." if not p["late"] else f'; {len(p["late"])} missed the deadline.') if not p["missing"] else "") + "</p>")
+
     # at a glance
     o.append(f'<h2 id="glance" style="--c:{ORANGE}">At a glance <span>what the team worked on</span></h2>')
     if not r["people"]:
@@ -406,25 +421,12 @@ def render_html(r: dict, weeks: list) -> str:
         o.append('<div class="sublabel" style="--c:#dc4c3e">Where Claude could have helped</div><ul class="g-help">'
                  + "".join(f'<li><b>{escape(s["name"])}:</b> {escape(s["text"])}</li>' for s in r["suggestions"]) + "</ul>")
 
-    # participation
-    o.append(f'<h2 id="people" style="--c:{GREEN}">Participation <span>{len(p["complete"])} of {p["roster"]}</span></h2><div class="people">')
-    late = {x["name"]: x["at"] for x in p["late"]}
-    for n in p["complete"]:
-        o.append(f'<div class="row">{_av(n, pc[n], "sm")}<div class="body">{escape(n)}'
-                 + (f'<div class="late">Late: sent {escape(late[n])}</div>' if n in late else "")
-                 + '</div><span class="ring sent" title="Sent"></span></div>')
-    for n in p["missing"]:
-        o.append(f'<div class="row missing">{_av(n, pc[n], "sm off")}<div class="body">{escape(n)} <span class="label">hasn\'t sent yet</span>'
-                 + ('<div class="late">Past the deadline</div>' if p["overdue"] else "") + "</div></div>")
-    o.append("</div>")
-    o.append(f'<p class="note">Due {escape(p["deadline"])}. '
-             + ("Everyone is in" + (", on time." if not p["late"] else f'; {len(p["late"])} missed the deadline.') if not p["missing"] else "") + "</p>")
-
     # the digest, by person
     o.append(f'<h2 id="digest" style="--c:{BLUE}">The week, by person <span>{c["projects"]} project{"" if c["projects"] == 1 else "s"}'
              f' · {len(c["tasks"])} other work item{"" if len(c["tasks"]) == 1 else "s"}</span></h2>')
     if not r["people"]:
         o.append('<p class="empty">Nothing sent for this week yet.</p>')
+    o.append('<div class="pgrid">')
     for i, pp in enumerate(r["people"]):
         o.append(f'<div class="pcard" id="p-{i}" style="--c:{pc[pp["name"]]}"><div class="phead">{_av(pp["name"], pc[pp["name"]])}{escape(pp["name"])}'
                  f'<span class="label">{len(pp["projects"])} project{"" if len(pp["projects"]) == 1 else "s"}'
@@ -448,6 +450,7 @@ def render_html(r: dict, weeks: list) -> str:
                      + (_pill("Claude saved " + t["timeSaved"], ACCENT) if t["claude"] else '<span class="label">no Claude</span>') + "</div>"
                      + (f'<div class="meta">{escape(t["note"])}</div>' if t.get("note") else "") + "</div></div>")
         o.append("</div>")
+    o.append("</div>")
 
     # Claude impact
     o.append(f'<h2 id="impact" style="--c:{ACCENT}">Claude impact <span>about {c["hours"]:g} hours saved</span></h2>'
