@@ -57,6 +57,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import mailer
 import report
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -86,6 +87,8 @@ STATUSES = ["Not started", "In progress", "On track", "At risk", "Blocked", "Com
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
 REQUEST_STATUSES = ["Approved", "Pending", "Denied"]
+TIME_SPENT = ["Under 1 hr", "1-3 hrs", "3-5 hrs", "5-10 hrs", "10+ hrs"]
+DEFAULT_CATEGORIES = ["Support Hub", "Deal Desk", "Ad hoc analysis"]
 
 
 def now() -> str:
@@ -117,9 +120,13 @@ def load() -> None:
         cfg = json.loads(SEED.read_text(encoding="utf-8"))
         DATA["config"] = cfg
         write("config")
+    cfg.setdefault("reportEmail", "")
+    cfg.setdefault("taskCategories", list(DEFAULT_CATEGORIES))
     DATA["config"] = cfg
     DATA["updates"] = _read("updates.json", [])
     DATA["usage"] = _read("usage.json", [])
+    DATA["tasks"] = _read("tasks.json", [])      # other work: Support Hub, Deal Desk, ...
+    DATA["sent"] = _read("sent.json", {})      # week -> when the report email went out
 
 
 def write(key: str) -> bool:
@@ -197,12 +204,16 @@ def clean_update(d: dict) -> dict | str:
     status = d.get("status")
     if status not in STATUSES:
         return "Pick a status."
-    bullets = [re.sub(r"\s+", " ", str(b)).strip()[:500] for b in (d.get("progress") or [])]
-    bullets = [b for b in bullets if b][:3]
+    def lines(key):
+        out = [re.sub(r"\s+", " ", str(b)).strip()[:500] for b in (d.get(key) or [])]
+        return [b for b in out if b][:3]
+    bullets, steps = lines("progress"), lines("nextSteps")
     if not bullets:
-        return "Add at least one line of progress and next steps."
+        return "Add at least one line of progress this week."
+    if not steps:
+        return "Add at least one next step."
     out = {"name": name, "week": d["week"], "project": project,
-           "type": ptype, "status": status, "progress": bullets,
+           "type": ptype, "status": status, "progress": bullets, "nextSteps": steps,
            "timeSaved": None, "couldHelp": ""}
     if ptype == "Claude":
         if d.get("timeSaved") not in TIME_SAVED:
@@ -210,6 +221,33 @@ def clean_update(d: dict) -> dict | str:
         out["timeSaved"] = d["timeSaved"]
     else:
         out["couldHelp"] = re.sub(r"\s+", " ", str(d.get("couldHelp", ""))).strip()[:300]
+    return out
+
+
+def task_categories() -> list:
+    """The admin's categories plus any typed in before, so they stay pickable."""
+    out = {c.lower(): c for c in DATA["config"].get("taskCategories", [])}
+    for t in DATA["tasks"]:
+        out.setdefault(t["category"].lower(), t["category"])
+    return list(out.values())
+
+
+def clean_task(d: dict) -> dict | str:
+    cat = re.sub(r"\s+", " ", str(d.get("category", ""))).strip()[:80]
+    if not cat:
+        return "Choose or name the kind of work."
+    cat = {c.lower(): c for c in task_categories()}.get(cat.lower(), cat)
+    spent = d.get("timeSpent") or None
+    if spent is not None and spent not in TIME_SPENT:
+        return "Choose how much time it took."
+    if d.get("claude") not in (True, False):
+        return "Say whether you used Claude for it."
+    out = {"category": cat, "timeSpent": spent, "note": re.sub(r"\s+", " ", str(d.get("note", ""))).strip()[:300],
+           "claude": d["claude"], "timeSaved": None}
+    if d["claude"]:
+        if d.get("timeSaved") not in TIME_SAVED:
+            return "Choose how much time Claude saved."
+        out["timeSaved"] = d["timeSaved"]
     return out
 
 
@@ -283,7 +321,79 @@ def clean_config(d: dict) -> dict | str:
     instructions = str(d.get("screenshotInstructions", "")).strip()[:2000]
     if not roster:
         return "The roster needs at least one name."
-    return {"roster": roster, "projects": projects, "screenshotInstructions": instructions}
+    emails = [a for a in re.split(r"[\s,;]+", str(d.get("reportEmail", ""))) if a]
+    bad = [a for a in emails if not mailer.EMAIL_RX.match(a)]
+    if bad:
+        return f"That email address doesn't look right: {bad[0]}"
+    cats, seen = [], set()
+    sent = d["taskCategories"] if isinstance(d.get("taskCategories"), list) else DATA["config"].get("taskCategories", [])
+    for c in sent:
+        c = re.sub(r"\s+", " ", str(c)).strip()[:80]
+        if c and c.lower() not in seen:
+            seen.add(c.lower())
+            cats.append(c)
+    return {"roster": roster, "projects": projects, "screenshotInstructions": instructions,
+            "reportEmail": ", ".join(emails), "taskCategories": cats}
+
+
+# ---------------- the report email ----------------
+
+# One thread sends, so a week can't go out twice. It wakes every 10 minutes
+# (for the Monday backup and retries) and straight after every submission.
+MAIL_KICK = threading.Event()
+MAIL_ERROR = {"at": "", "error": ""}
+
+
+def weeks_to_check() -> list:
+    t = mailer.now_local().date()
+    recent = {r["week"] for r in DATA["updates"] + DATA["usage"] if r["week"] >= (t - timedelta(days=21)).isoformat()}
+    recent.add((t - timedelta(days=(t.weekday() - 4) % 7)).isoformat())      # the Friday just gone (or today)
+    return sorted(w for w in recent if w not in DATA["sent"])
+
+
+def due_emails() -> list:
+    """[(week, report, reason)] for weeks whose email should go now."""
+    out = []
+    if not any(p["active"] for p in DATA["config"]["roster"]):
+        return out
+    now = mailer.now_local()
+    for w in weeks_to_check():
+        r = report.build(DATA, w)
+        if not r["participation"]["missing"]:
+            out.append((w, r, "everyone"))
+        elif r["participation"]["complete"] and mailer.deadline(w) <= now < mailer.deadline(w) + timedelta(days=3):
+            # (a week nobody sent anything for gets no email)
+            out.append((w, r, "deadline"))
+    return out
+
+
+def mail_once() -> None:
+    if not mailer.configured():
+        return
+    with LOCK:
+        to = mailer.recipients(DATA["config"])
+        due = due_emails() if to else []
+    for week, r, reason in due:
+        note = "" if reason == "everyone" else f"Sent at the Monday deadline. Still missing: {', '.join(r['participation']['missing'])}."
+        ok, detail = mailer.send(to, mailer.subject(r), mailer.html(r, note), mailer.plain(r))
+        with LOCK:
+            if ok:
+                DATA["sent"][week] = {"at": now(), "to": to, "reason": reason, "id": detail}
+                write("sent")
+                MAIL_ERROR.update(at="", error="")
+            else:
+                MAIL_ERROR.update(at=now(), error=detail)
+        sys.stderr.write(f"report email for {week} ({reason}): {'sent' if ok else detail}\n")
+
+
+def mail_loop() -> None:
+    while True:
+        try:
+            mail_once()
+        except Exception as exc:          # never let the thread die
+            sys.stderr.write(f"mail loop error: {exc}\n")
+        MAIL_KICK.wait(600)
+        MAIL_KICK.clear()
 
 
 # ---------------- exports ----------------
@@ -301,10 +411,18 @@ UPDATE_COLS = [
     ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]),
     ("Project", lambda r: r["project"]),
     ("Type", lambda r: r["type"]), ("Status", lambda r: r["status"]),
-    ("Progress and next steps", lambda r: "\n".join("• " + b for b in r["progress"])),
+    ("Progress this week", lambda r: "\n".join("• " + b for b in r["progress"])),
+    ("Next steps", lambda r: "\n".join("• " + b for b in r.get("nextSteps", []))),
     ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
     ("Time saved (hrs, midpoint)", lambda r: report.hours(r) if r["type"] == "Claude" else ""),
     ("Claude could have helped", lambda r: r.get("couldHelp", "")),
+    ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
+]
+TASK_COLS = [
+    ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]), ("Work", lambda r: r["category"]),
+    ("Time spent", lambda r: r.get("timeSpent") or ""), ("Note", lambda r: r.get("note", "")),
+    ("Used Claude", lambda r: "Yes" if r["claude"] else "No"), ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
+    ("Time saved (hrs, midpoint)", lambda r: report.hours(r) if r["claude"] else ""),
     ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
 ]
 USAGE_COLS = [
@@ -421,7 +539,8 @@ class Handler(BaseHTTPRequestHandler):
         path, q = url.path, {k: v[0] for k, v in parse_qs(url.query).items()}
         if path == "/healthz":
             return self.send_json(200, {"ok": True, "persistent": state_persistent(), "writable": WRITABLE,
-                                        "teamAuth": bool(APP_PASSWORD), "adminAuth": bool(ADMIN_PASSWORD)})
+                                        "teamAuth": bool(APP_PASSWORD), "adminAuth": bool(ADMIN_PASSWORD),
+                                        "email": mailer.configured()})
         if path in ("/", "/index.html"):
             return self.gate("team") and self.page("index.html")
         if path == "/api/config":
@@ -433,6 +552,7 @@ class Handler(BaseHTTPRequestHandler):
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
                 "statuses": STATUSES, "timeSaved": TIME_SAVED, "requestStatuses": REQUEST_STATUSES,
+                "taskCategories": task_categories(), "timeSpent": TIME_SPENT,
                 "writable": WRITABLE, "persistent": state_persistent(),
             })
         if path == "/api/mine":
@@ -445,10 +565,12 @@ class Handler(BaseHTTPRequestHandler):
                 earlier = sorted((u for u in DATA["usage"] if u["name"] == name and u["week"] < week), key=lambda u: u["week"])
                 prev_week = max((u["week"] for u in DATA["updates"] if u["name"] == name and u["week"] < week), default=None)
                 prev = [u for u in DATA["updates"] if u["name"] == name and u["week"] == prev_week]
-            # A new week starts from last week's projects and budget.
-            return self.send_json(200, {"updates": ups, "usage": use,
+                tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == week]
+                prev_tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == prev_week]
+            # A new week starts from last week's projects, other work and budget.
+            return self.send_json(200, {"updates": ups, "usage": use, "tasks": tasks,
                                         "lastBudget": earlier[-1]["budget"] if earlier else None,
-                                        "lastWeek": prev_week, "lastProjects": prev})
+                                        "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks})
 
         # admin only from here
         if path in ("/admin", "/admin.html"):
@@ -464,7 +586,9 @@ class Handler(BaseHTTPRequestHandler):
                         o = learned.setdefault(u["project"].lower(), {"name": u["project"], "type": u["type"], "count": 0, "last": ""})
                         o["count"] += 1
                         o["last"] = max(o["last"], u["week"])
-                return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()),
+                email = {"configured": mailer.configured(), "from": mailer.FROM, "timezone": mailer.TZ_NAME,
+                         "sent": DATA["sent"], "error": MAIL_ERROR["error"], "errorAt": MAIL_ERROR["at"]}
+                return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()), "email": email,
                                             "weeks": report.weeks_with_data(DATA), "writable": WRITABLE, "persistent": state_persistent()})
         if path in ("/report", "/report.txt"):
             if not self.gate("admin"):
@@ -484,15 +608,16 @@ class Handler(BaseHTTPRequestHandler):
             ext = m.group(1).rsplit(".", 1)[1]
             ctype = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}[ext]
             return self.send_body(200, (SHOTS / m.group(1)).read_bytes(), ctype, {"Cache-Control": "private, max-age=86400"})
-        m = re.fullmatch(r"/export/(updates|usage)\.csv", path)
+        m = re.fullmatch(r"/export/(updates|usage|tasks)\.csv", path)
         if m:
             if not self.gate("admin"):
                 return
             with LOCK:
                 rows = [r for r in DATA[m.group(1)] if not q.get("week") or r["week"] == q["week"]]
-            rows.sort(key=lambda r: (r["week"], r["name"], r.get("project", "")))
-            body = to_csv(rows, UPDATE_COLS if m.group(1) == "updates" else USAGE_COLS)
-            fname = f"weekly-{'projects' if m.group(1) == 'updates' else 'usage'}{'-' + q['week'] if q.get('week') else ''}.csv"
+            rows.sort(key=lambda r: (r["week"], r["name"], r.get("project", r.get("category", ""))))
+            cols, label = {"updates": (UPDATE_COLS, "projects"), "usage": (USAGE_COLS, "usage"), "tasks": (TASK_COLS, "other-work")}[m.group(1)]
+            body = to_csv(rows, cols)
+            fname = f"weekly-{label}{'-' + q['week'] if q.get('week') else ''}.csv"
             return self.send_body(200, body, "text/csv; charset=utf-8", {"Content-Disposition": f'attachment; filename="{fname}"'})
         self.send_json(404, {"error": "Not found"})
 
@@ -501,11 +626,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json(503, {"error": "The server couldn't save that. Its storage isn't writable."})
 
     def do_POST(self):
-        """The whole week in one send: every project update plus usage.
+        """The whole week in one send: every project update, other work, and usage.
 
         Validates everything first and saves nothing unless all of it is
         good. The projects sent become this person's full list for the week
         (one left off is deleted); a resend just updates."""
+        if urlsplit(self.path).path == "/api/admin/test-email":
+            return self.test_email()
         if urlsplit(self.path).path != "/api/submit":
             return self.send_json(404, {"error": "Not found"})
         if not self.gate("team"):
@@ -525,6 +652,13 @@ class Handler(BaseHTTPRequestHandler):
                     projects.append(u)
             if not projects and not errors:
                 errors.append({"project": None, "error": "Add at least one project."})
+            tasks = []
+            for i, d in enumerate(body.get("tasks") or []):
+                t = clean_task(d)
+                if isinstance(t, str):
+                    errors.append({"task": i, "error": t})
+                else:
+                    tasks.append({"name": name, "week": week, **t})
             usage = clean_usage({**(body.get("usage") or {}), "name": name, "week": week})
             if isinstance(usage, str):
                 errors.append({"usage": True, "error": usage})
@@ -560,19 +694,42 @@ class Handler(BaseHTTPRequestHandler):
                 saved.append(rec)
             for gone in old.values():
                 log_change("delete", "project", gone, None)
-            before_updates, before_usage = DATA["updates"], list(DATA["usage"])
+            before_updates, before_usage, before_tasks = DATA["updates"], list(DATA["usage"]), DATA["tasks"]
             DATA["updates"] = keep + saved
+            mine = lambda r: r["name"] == name and r["week"] == week
+            old_tasks = [r for r in DATA["tasks"] if mine(r)]
+            saved_tasks = [{"id": "t-" + secrets.token_hex(5), **t, "submittedAt": stamp, "updatedAt": stamp} for t in tasks]
+            DATA["tasks"] = [r for r in DATA["tasks"] if not mine(r)] + saved_tasks
+            if old_tasks or saved_tasks:
+                log_change("replace", "tasks", old_tasks, saved_tasks)
             if cur_use:
                 rec_use = {**cur_use, **usage, "updatedAt": stamp}
                 DATA["usage"] = [rec_use if r is cur_use else r for r in DATA["usage"]]
             else:
                 rec_use = {"id": "s-" + secrets.token_hex(5), **usage, "submittedAt": stamp, "updatedAt": stamp}
                 DATA["usage"].append(rec_use)
-            if not (write("updates") and write("usage")):
-                DATA["updates"], DATA["usage"] = before_updates, before_usage
+            if not (write("updates") and write("usage") and write("tasks")):
+                DATA["updates"], DATA["usage"], DATA["tasks"] = before_updates, before_usage, before_tasks
                 return self.unsaved()
             log_change("update" if cur_use else "create", "usage", cur_use, rec_use)
-        return self.send_json(200, {"updates": saved, "usage": rec_use, "resent": bool(cur_use)})
+        MAIL_KICK.set()       # everyone in? the email goes now
+        return self.send_json(200, {"updates": saved, "tasks": saved_tasks, "usage": rec_use, "resent": bool(cur_use)})
+
+    def test_email(self):
+        """Sends the latest week's report now, marked as a test. Doesn't count as that week's email."""
+        if not self.gate("admin"):
+            return
+        if not mailer.configured():
+            return self.send_json(400, {"error": "Email isn't set up yet: add RESEND_API_KEY in Railway's Variables."})
+        with LOCK:
+            to = mailer.recipients(DATA["config"])
+            r = report.build(DATA, report.default_week(DATA))
+        if not to:
+            return self.send_json(400, {"error": "Add an address to send the report to, and save first."})
+        ok, detail = mailer.send(to, "[Test] " + mailer.subject(r), mailer.html(r, "This is a test send from the admin page."), mailer.plain(r))
+        if not ok:
+            return self.send_json(502, {"error": detail})
+        self.send_json(200, {"sent": True, "to": to, "week": r["week"]})
 
     def do_PUT(self):
         if urlsplit(self.path).path != "/api/admin/config":
@@ -599,6 +756,9 @@ def main():
         load()
     sys.stderr.write(f"data at {STATE_DIR} ({'persistent volume' if state_persistent() else 'container disk — resets on deploy'}); "
                      f"team auth {'on' if APP_PASSWORD else 'OFF'}, admin auth {'on' if ADMIN_PASSWORD else 'OFF'}\n")
+    to = ", ".join(mailer.recipients(DATA["config"])) or "nobody yet"
+    sys.stderr.write(f"report email {'on, to ' + to if mailer.configured() else 'OFF (no RESEND_API_KEY)'}\n")
+    threading.Thread(target=mail_loop, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

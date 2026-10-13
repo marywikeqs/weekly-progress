@@ -64,8 +64,9 @@ try:
         pg.fill("#week", wed); pg.dispatch_event("#week", "change"); pg.wait_for_timeout(200)
         check(pg.input_value("#week") == (_d.fromisoformat(wk) - _t(days=7)).isoformat(), "a Wednesday snaps to that week's Friday")
         check(pg.is_visible("#week-note"), "snap explained")
-        pg.fill("#week", wk); pg.dispatch_event("#week", "change")
-        pg.select_option("#name", "Drew Test"); pg.wait_for_timeout(400)
+        nxt = (_d.fromisoformat(wk) + _t(days=7)).isoformat()     # next week: Drew hasn't sent it
+        pg.select_option("#name", "Drew Test"); pg.wait_for_timeout(300)
+        pg.fill("#week", nxt); pg.dispatch_event("#week", "change"); pg.wait_for_timeout(400)
         check(pg.locator(".proj").count() == 1, "one blank card to start")
         pg.click("#send"); pg.wait_for_timeout(300)
         check(pg.locator(".invalid").count() >= 5, "empty send marks fields in red")
@@ -73,6 +74,7 @@ try:
         c1.locator(".f-pick").select_option("__new"); c1.locator(".f-new").fill("Pipeline Hygiene")
         c1.locator(".f-type").select_option("Claude"); c1.locator(".f-status").select_option("In progress")
         c1.locator(".f-b").first.fill("Cleaned stale opps"); c1.locator(".f-saved").select_option("1-3 hrs")
+        c1.locator(".f-n").first.fill("Close out Q4 list")
         pg.click("#add")
         c2 = pg.locator(".proj").nth(1)
         c2.locator(".f-pick").select_option("Board Deck Automation")
@@ -80,6 +82,13 @@ try:
         c2.locator(".f-type").select_option("Non-Claude")
         check(c2.locator(".f-help").is_visible() and not c2.locator(".f-saved").is_visible(), "non-Claude shows the could-help box")
         c2.locator(".f-status").select_option("At risk"); c2.locator(".f-b").first.fill("Waiting on data")
+        c2.locator(".f-n").first.fill("Chase finance")
+        pg.click("#add-task")
+        tk = pg.locator(".task").last
+        tk.locator(".t-cat").select_option("Deal Desk"); tk.locator(".t-spent").select_option("1-3 hrs")
+        tk.locator(".t-claude").select_option("yes")
+        check(tk.locator(".t-saved").is_visible(), "Used Claude shows time saved")
+        tk.locator(".t-saved").select_option("Under 1 hr"); tk.locator(".t-note").fill("Two deal reviews")
         pg.click("#add")   # a third, left blank: skipped on send
         pg.fill("#spend", "75"); pg.fill("#budget", "250"); pg.check("input[name=inc][value=no]")
         pg.set_input_files("#shot", str(OUT / "form-phone-light.png"))
@@ -90,6 +99,7 @@ try:
         pg.screenshot(path=str(OUT / "flow-done.png"), full_page=True)
         pg.click("#edit"); pg.wait_for_timeout(500)
         check(pg.locator(".proj").count() == 2, "Make a change reloads both projects")
+        check(pg.locator(".task").count() >= 1, "Make a change reloads other work")
         ctx.close()
 
         # print layout of the report

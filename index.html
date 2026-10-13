@@ -6,100 +6,183 @@
 <link rel="icon" href="data:,">
 <title>Weekly Progress</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--muted:#5d6676;--line:#d9dde4;--accent:#3b5bdb;--accent-soft:#e8edff;
---red:#c92a2a;--red-soft:#ffe9e9;--green:#2b8a3e;--green-soft:#e6f6ea;--grey-soft:#eef0f3;--focus:#3b5bdb55;--on-accent:#fff}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#12151b;--card:#1b1f27;--ink:#e7eaf0;--muted:#9aa3b2;--line:#323946;
---accent:#91a7ff;--accent-soft:#232c48;--red:#ff8787;--red-soft:#3a1f22;--green:#8ce99a;--green-soft:#1d3324;--grey-soft:#262b35;--focus:#91a7ff55;--on-accent:#12151b}}
+/* Todoist-style: warm sidebar, white page, red accent, thin dividers, priority-coloured status rings */
+:root{--bg:#fff;--side:#fcfaf8;--ink:#202020;--muted:#666;--faint:#999;--line:#f0f0f0;--edge:#e6e6e6;--hover:#f5f5f5;
+--accent:#dc4c3e;--accent-hover:#c3392c;--accent-soft:#fff6f0;--on-accent:#fff;
+--p1:#d1453b;--p2:#eb8909;--p3:#246fe0;--p4:#999;--done:#058527;--focus:#dc4c3e40}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1e1e1e;--side:#282828;--ink:#ededed;--muted:#a8a8a8;--faint:#7a7a7a;
+--line:#2f2f2f;--edge:#3d3d3d;--hover:#2a2a2a;--accent:#e06a5f;--accent-hover:#ea7f75;--accent-soft:#3a2523;--on-accent:#fff;
+--p1:#ff7066;--p2:#ff9a14;--p3:#5297ff;--p4:#8a8a8a;--done:#4ccf74;--focus:#e06a5f55}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:720px;margin:0 auto;padding:24px 16px 120px}
-h1{font-size:24px;margin:0 0 4px}h2{font-size:19px;margin:28px 0 10px}h3{font-size:16px;margin:0}
-.lede{color:var(--muted);margin:0 0 20px;font-size:15px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:12px}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media (max-width:560px){.row{grid-template-columns:1fr}}
-label,.lbl{display:block;font-weight:600;font-size:14px;margin:14px 0 5px}
-.row>div>label:first-child,.card>label:first-child{margin-top:0}
-label .opt{font-weight:400;color:var(--muted)}
-.hint{font-size:13px;color:var(--muted);margin:-2px 0 6px}
-#week-note{margin:6px 0 0}
-input,select,textarea{width:100%;font:inherit;font-size:16px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
-input[type=date]{min-height:44px}
-textarea{resize:vertical;min-height:44px}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus)}
-.invalid{border-color:var(--red)!important}
-.money{position:relative}.money span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}.money input{padding-left:24px}
-.bullet{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}.bullet b{color:var(--muted);padding-top:9px;width:12px}
-.seg{display:flex;gap:8px}.seg label{flex:1;margin:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
-.seg input{width:auto;margin:0}.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
-.seg.invalid label{border-color:var(--red)}
-.proj-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-.proj-head h3{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
-.remove{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;cursor:pointer;padding:4px 6px}
-.remove:hover{color:var(--red)}
-.card-err{color:var(--red);font-size:14px;margin-top:10px}
-.add{width:100%;font:inherit;font-weight:600;padding:12px;border:1.5px dashed var(--line);border-radius:12px;background:none;color:var(--accent);cursor:pointer}
-.add:hover{border-color:var(--accent)}
-.note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;margin-bottom:12px}
-.instructions{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-line;margin-bottom:8px}
-.preview{margin-top:8px;max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;display:none}
-.sendbar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px}
-.sendbar .in{max-width:720px;margin:0 auto;display:flex;gap:12px;align-items:center}
-.sendbar .msg{flex:1;font-size:14px;color:var(--muted);min-width:0}
-.sendbar .msg.err{color:var(--red)}.sendbar .msg.ok{color:var(--green)}
-button.primary{font:inherit;font-weight:600;padding:12px 22px;border-radius:8px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);white-space:nowrap}
-button:disabled{opacity:.6;cursor:default}
-.done{text-align:center;padding:28px 18px}
-.done .big{font-size:40px;line-height:1;color:var(--green)}
-.done ul{text-align:left;display:inline-block;margin:10px 0 0;padding-left:20px;font-size:15px}
-.banner{background:var(--red-soft);color:var(--red);padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:16px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.layout{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+aside{background:var(--side);padding:20px 16px;border-right:1px solid var(--line)}
+aside .app{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin:0 0 22px 4px}
+aside .app i{width:22px;height:22px;border-radius:6px;background:var(--accent);display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:13px}
+aside label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:14px 4px 4px}
+aside .tip{font-size:12px;color:var(--muted);margin:16px 4px 0;line-height:1.45}
+main{padding:32px 24px 140px;max-width:760px;width:100%}
+h1{font-size:20px;font-weight:700;margin:0}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.section{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:700;margin:30px 0 0;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.section .count{color:var(--faint);font-weight:400;font-size:12px}
+input,select,textarea{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--edge);border-radius:5px;padding:7px 9px;width:100%}
+aside select,aside input{background:var(--bg)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--faint);box-shadow:0 0 0 2px var(--focus)}
+textarea{resize:vertical}
+.invalid{border-color:var(--p1)!important;box-shadow:0 0 0 1px var(--p1)}
+.hint{font-size:12px;color:var(--muted);margin:2px 0 6px}
+#week-note{margin:6px 4px 0}
+/* a project = a Todoist task editor */
+.proj{border:1px solid var(--edge);border-radius:10px;padding:10px 12px 12px;margin-top:12px;background:var(--bg)}
+.proj:focus-within{border-color:var(--faint)}
+.proj-head{display:flex;align-items:center;gap:10px}
+.ring{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--p4);background:transparent}
+.ring[data-s="Blocked"]{border-color:var(--p1);background:color-mix(in srgb,var(--p1) 12%,transparent)}
+.ring[data-s="At risk"]{border-color:var(--p2);background:color-mix(in srgb,var(--p2) 12%,transparent)}
+.ring[data-s="In progress"],.ring[data-s="On track"]{border-color:var(--p3);background:color-mix(in srgb,var(--p3) 10%,transparent)}
+.ring[data-s="Completed"]{border-color:var(--done);background:var(--done)}
+.title{flex:1;min-width:0}
+.title select,.title input{border:0;padding:4px 0;font-size:15px;font-weight:600;background:transparent;box-shadow:none}
+.title select:focus,.title input:focus{box-shadow:none}
+.title .invalid{box-shadow:none;border:0!important;color:var(--p1)}
+.title input::placeholder{color:var(--faint);font-weight:400}
+.remove{flex:none;background:none;border:0;color:var(--faint);font-size:18px;line-height:1;cursor:pointer;padding:4px 6px;border-radius:4px}
+.remove:hover{background:var(--hover);color:var(--ink)}
+.newname .hint{margin:0 0 4px 28px}
+.newname input{margin-left:28px;width:calc(100% - 28px)}
+.bullets{margin:6px 0 0 28px}
+.bullet{display:flex;gap:6px;align-items:flex-start}
+.bullet b{color:var(--faint);padding-top:4px;font-weight:400}
+.bullet textarea{border:0;padding:4px 0;min-height:28px;background:transparent;color:var(--ink);box-shadow:none;font-size:13.5px}
+.bullet textarea:focus{box-shadow:none}
+.bullet textarea::placeholder{color:var(--faint)}
+.bullet .invalid{box-shadow:none;border:0!important}
+.bullet .invalid::placeholder{color:var(--p1)}
+.lh{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin:8px 0 0 28px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0 28px}
+.chips select{width:auto;font-size:13px;padding:4px 26px 4px 8px;border-radius:5px;color:var(--muted);cursor:pointer}
+.chips select.set{color:var(--ink)}
+.chips select[data-s="Blocked"]{color:var(--p1)}.chips select[data-s="At risk"]{color:var(--p2)}
+.chips select[data-s="In progress"],.chips select[data-s="On track"]{color:var(--p3)}.chips select[data-s="Completed"]{color:var(--done)}
+.helpline{margin:8px 0 0 28px}
+.helpline input{font-size:13px}
+.card-err{color:var(--p1);font-size:12.5px;margin:8px 0 0 28px}
+.add{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;padding:10px 0;font:inherit;color:var(--muted);cursor:pointer;text-align:left}
+.add span{width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;color:var(--accent);font-size:18px;line-height:1}
+.add:hover{color:var(--accent)}.add:hover span{background:var(--accent);color:#fff}
+/* other work: one line each */
+.task{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.task .ring{width:16px;height:16px}
+.task .t-cat{width:auto;min-width:150px;font-weight:600}
+.task .t-new{width:180px}
+.task .t-note{flex:1 1 220px;min-width:0}
+.task select{width:auto;font-size:13px;padding:4px 26px 4px 8px;color:var(--muted)}
+.task select.set{color:var(--ink)}
+.task .t-err{flex-basis:100%;color:var(--p1);font-size:12.5px;padding-left:24px}
+.section .hintx{font-weight:400;color:var(--faint);font-size:12px}
+/* usage */
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.field label,.lbl{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 4px}
+.lbl{margin-top:14px}
+.money{position:relative}.money span{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--faint)}.money input{padding-left:20px}
+.seg{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
+.seg label{display:flex;align-items:center;gap:6px;padding:6px 16px;cursor:pointer;font-size:13px;border-right:1px solid var(--edge)}
+.seg label:last-child{border-right:0}
+.seg input{width:auto;margin:0;accent-color:var(--accent)}
+.seg label:has(input:checked){background:var(--accent-soft);color:var(--accent);font-weight:600}
+.seg.invalid{box-shadow:0 0 0 1px var(--p1)}
+.instructions{background:var(--side);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px;color:var(--muted);white-space:pre-line;margin-bottom:6px}
+input[type=file]{padding:6px;font-size:13px}
+.preview{margin-top:8px;max-width:100%;max-height:200px;border:1px solid var(--edge);border-radius:6px;display:none}
+#usage-err{margin-left:0}
+.note{font-size:13px;color:var(--muted);background:var(--side);border-left:3px solid var(--accent);padding:8px 12px;margin-top:16px;border-radius:0 6px 6px 0}
+.banner{background:var(--accent-soft);color:var(--accent);padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:12px}
+/* send bar */
+.sendbar{position:fixed;left:280px;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding:12px 24px}
+.sendbar .in{max-width:712px;display:flex;gap:12px;align-items:center}
+.sendbar .msg{flex:1;font-size:13px;color:var(--muted);min-width:0}
+.sendbar .msg.err{color:var(--p1)}
+button.primary{font:inherit;font-size:14px;font-weight:600;padding:8px 16px;border-radius:5px;border:0;background:var(--accent);color:var(--on-accent);cursor:pointer;white-space:nowrap}
+button.primary:hover{background:var(--accent-hover)}
+button:disabled{opacity:.55;cursor:default}
+.done{text-align:center;padding:48px 16px}
+.done .big{width:56px;height:56px;border-radius:50%;background:var(--done);color:#fff;display:inline-grid;place-items:center;font-size:30px}
+.done h2{font-size:18px;margin:14px 0 2px}
+.done ul{list-style:none;padding:0;margin:16px auto 0;max-width:420px;text-align:left}
+.done li{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.done li .ring{width:16px;height:16px}
 [hidden]{display:none!important}
+@media (max-width:760px){
+  .task .t-cat,.task .t-new{flex:1 1 100%}
+  .task .ring{display:none}
+  .layout{grid-template-columns:1fr}
+  aside{border-right:0;border-bottom:1px solid var(--line);padding:16px}
+  aside .app{margin-bottom:10px}
+  aside .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  aside label{margin-top:4px}
+  aside .tip{display:none}
+  main{padding:20px 16px 140px}
+  .sendbar{left:0;padding:12px 16px}
+  .fields{grid-template-columns:1fr}
+  .bullets,.chips,.helpline,.card-err,.newname .hint{margin-left:0}
+  .newname input{margin-left:0;width:100%}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Weekly Progress</h1>
-  <p class="lede">Your weekly check-in: the projects you worked on, plus your Claude usage, sent together in one go. About 5 minutes.</p>
-  <div id="banner" class="banner" hidden></div>
-
-  <div class="card">
-    <div class="row">
+<div class="layout">
+  <aside>
+    <div class="app"><i>✓</i>Weekly Progress</div>
+    <div class="grid">
       <div><label for="name">Name</label><select id="name"><option value="">Choose your name</option></select></div>
       <div><label for="week">Week ending (Friday)</label><input type="date" id="week" step="7"><p class="hint" id="week-note" hidden></p></div>
     </div>
-  </div>
+    <p class="tip">Add each project you worked on this week, any other work (Support Hub, Deal Desk, ad hoc analysis), and your Claude usage, then send it all at once. About 5 minutes.</p>
+  </aside>
 
-  <div id="done" class="card done" hidden></div>
+  <main>
+    <div id="banner" class="banner" hidden></div>
+    <h1 id="title">Your week</h1>
+    <p class="sub" id="subtitle">Choose your name to start.</p>
 
-  <form id="form" novalidate hidden>
-    <div id="state" class="note" hidden></div>
+    <div id="done" class="done" hidden></div>
 
-    <h2>Projects</h2>
-    <div id="projects"></div>
-    <button type="button" class="add" id="add">+ Add another project</button>
+    <form id="form" novalidate hidden>
+      <div id="state" class="note" hidden></div>
 
-    <h2>Claude usage</h2>
-    <div class="card" id="usage">
-      <div class="row">
-        <div><label for="spend">Spend used so far this month</label><div class="money"><span>$</span><input id="spend" inputmode="decimal" placeholder="0.00"></div></div>
-        <div><label for="budget">Current monthly budget</label><div class="money"><span>$</span><input id="budget" inputmode="decimal" placeholder="0.00"></div></div>
-      </div>
-      <span class="lbl">Did you request a budget increase this week?</span>
-      <div class="seg" id="inc-seg"><label><input type="radio" name="inc" value="no"> No</label><label><input type="radio" name="inc" value="yes"> Yes</label></div>
-      <div id="inc-wrap" hidden>
-        <div class="row">
-          <div><label for="inc-amount">New budget requested</label><div class="money"><span>$</span><input id="inc-amount" inputmode="decimal"></div></div>
-          <div><label for="inc-status">Request status</label><select id="inc-status"></select></div>
+      <div class="section">Projects <span class="count" id="proj-count"></span></div>
+      <div id="projects"></div>
+      <button type="button" class="add" id="add"><span>+</span>Add another project</button>
+
+      <div class="section">Other work <span class="hintx">Support Hub, Deal Desk, ad hoc analysis and the like (optional)</span></div>
+      <div id="tasks"></div>
+      <button type="button" class="add" id="add-task"><span>+</span>Add other work</button>
+
+      <div class="section">Claude usage</div>
+      <div id="usage">
+        <div class="fields">
+          <div class="field"><label for="spend">Spend used so far this month</label><div class="money"><span>$</span><input id="spend" inputmode="decimal" placeholder="0.00"></div></div>
+          <div class="field"><label for="budget">Current monthly budget</label><div class="money"><span>$</span><input id="budget" inputmode="decimal" placeholder="0.00"></div></div>
         </div>
-        <label for="inc-reason">Reason for the increase</label><input id="inc-reason" maxlength="300">
+        <span class="lbl">Did you request a budget increase this week?</span>
+        <div class="seg" id="inc-seg"><label><input type="radio" name="inc" value="no"> No</label><label><input type="radio" name="inc" value="yes"> Yes</label></div>
+        <div id="inc-wrap" hidden>
+          <div class="fields">
+            <div class="field"><label for="inc-amount">New budget requested</label><div class="money"><span>$</span><input id="inc-amount" inputmode="decimal"></div></div>
+            <div class="field"><label for="inc-status">Request status</label><select id="inc-status"></select></div>
+          </div>
+          <div class="field" style="margin-top:12px"><label for="inc-reason">Reason for the increase</label><input id="inc-reason" maxlength="300"></div>
+        </div>
+        <label class="lbl" for="shot">Usage screenshot</label>
+        <div class="instructions" id="shot-howto"></div>
+        <input type="file" id="shot" accept="image/*">
+        <p class="hint" id="shot-state"></p>
+        <img class="preview" id="shot-preview" alt="Screenshot preview">
+        <div class="card-err" id="usage-err" hidden></div>
       </div>
-      <label for="shot">Usage screenshot</label>
-      <div class="instructions" id="shot-howto"></div>
-      <input type="file" id="shot" accept="image/*">
-      <p class="hint" id="shot-state"></p>
-      <img class="preview" id="shot-preview" alt="Screenshot preview">
-      <div class="card-err" id="usage-err" hidden></div>
-    </div>
-  </form>
+    </form>
+  </main>
 </div>
 
 <div class="sendbar" id="sendbar" hidden><div class="in">
@@ -144,7 +227,7 @@ async function api(path, opts = {}) {
 // browser that lets another day through gets moved to that week's Friday.
 function setupWeek() {
   const f = fridayFor(new Date()), lo = new Date(f), hi = new Date(f);
-  lo.setDate(f.getDate() - 7 * 52); hi.setDate(f.getDate() + 7);
+  lo.setDate(f.getDate() - 7 * 52); hi.setDate(f.getDate() + 7 * 52);
   Object.assign($('week'), {min: iso(lo), max: iso(hi), value: iso(f)});
   lastWeek = iso(f);
   $('week').onchange = () => {
@@ -173,7 +256,8 @@ async function init() {
   $('shot-howto').textContent = CFG.screenshotInstructions || 'Capture your Claude usage screen for this month so far.';
 
   $('name').onchange = () => { store('wp-name', $('name').value); load(); };
-  $('add').onclick = () => { const c = addCard(); c.querySelector('select, input').focus(); };
+  $('add-task').onclick = () => addTask().querySelector('.t-cat').focus();
+  $('add').onclick = () => { const c = addCard(); c.querySelector('.title :not([hidden])').focus(); };
   document.querySelectorAll('input[name=inc]').forEach(r => r.onchange = () => { $('inc-wrap').hidden = incValue() !== true; });
   $('shot').onchange = onShot;
   $('form').onsubmit = send;
@@ -185,6 +269,8 @@ async function init() {
 async function load() {
   $('done').hidden = true;
   const name = $('name').value, week = $('week').value;
+  $('title').textContent = name ? `${name.split(' ')[0]}'s week` : 'Your week';
+  $('subtitle').textContent = name ? `Week ending ${fmtWeek(week)}` : 'Choose your name to start.';
   $('form').hidden = $('sendbar').hidden = !name;
   if (!name) return;
   msg('');
@@ -203,6 +289,9 @@ async function load() {
     st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one, and remove any you didn't work on this week.` : '';
     st.hidden = !carry.length;
   }
+  $('tasks').innerHTML = '';
+  if (MINE.updates.length || MINE.usage) MINE.tasks.forEach(t => addTask(t));
+  else MINE.lastTasks.forEach(t => addTask({category: t.category, claude: t.claude}));   // recurring work carries over
   fillUsage();
   $('send').textContent = MINE.updates.length || MINE.usage ? 'Send updated version' : 'Send weekly update';
 }
@@ -214,22 +303,27 @@ function addCard(u = {}) {
   const known = !u.project || CFG.projects.some(p => p.name.toLowerCase() === u.project.toLowerCase());
   const learned = CFG.projects.length > 0;
   el.innerHTML = `
-    <div class="proj-head"><h3>Project</h3><button type="button" class="remove">Remove</button></div>
-    <div class="pick"${learned ? '' : ' hidden'}><label for="p${id}">Project</label>
-      <select id="p${id}" class="f-pick">${options([...CFG.projects.map(p => p.name), {value: '__new', label: 'New project…'}], 'Choose a project')}</select></div>
-    <div class="newname"${learned ? ' hidden' : ''}><label for="n${id}">${learned ? 'New project name' : 'Project name'}</label>
-      <p class="hint">Keep it short and use the same name every week, so the report can follow it.</p>
-      <input id="n${id}" class="f-new" maxlength="120" placeholder="e.g. Commission Audit Tool"></div>
-    <div class="row">
-      <div><label for="t${id}">Project type</label><select id="t${id}" class="f-type">${options([{value: 'Claude', label: 'Claude project'}, {value: 'Non-Claude', label: 'Non-Claude project'}], 'Choose')}</select></div>
-      <div><label for="s${id}">Status</label><select id="s${id}" class="f-status">${options(CFG.statuses, 'Choose')}</select></div>
+    <div class="proj-head"><span class="ring" aria-hidden="true"></span>
+      <div class="title">
+        <select class="f-pick" aria-label="Project"${learned ? '' : ' hidden'}>${options([...CFG.projects.map(p => p.name), {value: '__new', label: 'New project…'}], 'Choose a project')}</select>
+        <input class="f-new" maxlength="120" aria-label="Project name" placeholder="${learned ? 'New project name' : 'Project name, e.g. Commission Audit Tool'}">
+      </div>
+      <button type="button" class="remove" title="Remove this project" aria-label="Remove this project">×</button></div>
+    <div class="newname"><p class="hint">Keep it short and use the same name every week, so the report can follow it.</p></div>
+    <div class="lh">Progress this week</div>
+    <div class="bullets">
+      ${[0, 1, 2].map(i => `<div class="bullet"><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Another line (optional)' : 'What moved this week'}"></textarea></div>`).join('')}
     </div>
-    <span class="lbl">Progress and next steps</span>
-    <p class="hint">One to three short bullets: what moved this week and what's next.</p>
-    ${[0, 1, 2].map(i => `<div class="bullet"><b>•</b><textarea class="f-b" rows="2" maxlength="500"${i ? ' placeholder="Optional"' : ''} aria-label="Bullet ${i + 1}"></textarea></div>`).join('')}
-    <div class="saved" hidden><label for="h${id}">Time saved with Claude this week</label><select id="h${id}" class="f-saved">${options(CFG.timeSaved, 'Choose')}</select></div>
-    <div class="help" hidden><label for="c${id}">Anything Claude could have helped with? <span class="opt">(optional)</span></label>
-      <input id="c${id}" class="f-help" maxlength="300" placeholder="A step that could have been faster with Claude"></div>
+    <div class="lh">Next steps</div>
+    <div class="bullets">
+      ${[0, 1, 2].map(i => `<div class="bullet"><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Another line (optional)' : 'What\'s next'}"></textarea></div>`).join('')}
+    </div>
+    <div class="chips">
+      <select class="f-type" aria-label="Project type">${options([{value: 'Claude', label: 'Claude project'}, {value: 'Non-Claude', label: 'Non-Claude project'}], 'Project type')}</select>
+      <select class="f-status" aria-label="Status">${options(CFG.statuses, 'Status')}</select>
+      <span class="saved" hidden><select class="f-saved" aria-label="Time saved with Claude this week">${options(CFG.timeSaved.map(t => ({value: t, label: 'Saved: ' + t})), 'Time saved with Claude')}</select></span>
+    </div>
+    <div class="help helpline" hidden><input class="f-help" maxlength="300" aria-label="Anything Claude could have helped with? (optional)" placeholder="Anything Claude could have helped with? (optional)"></div>
     <div class="card-err" hidden></div>`;
   const q = s => el.querySelector(s);
   if (u.project) {
@@ -239,12 +333,18 @@ function addCard(u = {}) {
   q('.f-type').value = u.type || '';
   q('.f-status').value = u.status || '';
   el.querySelectorAll('.f-b').forEach((t, i) => t.value = (u.progress || [])[i] || '');
+  el.querySelectorAll('.f-n').forEach((t, i) => t.value = (u.nextSteps || [])[i] || '');
   q('.f-saved').value = u.timeSaved || '';
   q('.f-help').value = u.couldHelp || '';
   const sync = () => {
-    q('.newname').hidden = learned && q('.f-pick').value !== '__new';
+    const isNew = !learned || q('.f-pick').value === '__new';
+    q('.f-new').hidden = !isNew;
+    q('.newname').hidden = !isNew;
     q('.saved').hidden = q('.f-type').value !== 'Claude';
     q('.help').hidden = q('.f-type').value !== 'Non-Claude';
+    q('.ring').dataset.s = q('.f-status').value;
+    q('.f-status').dataset.s = q('.f-status').value;
+    el.querySelectorAll('.chips select').forEach(x => x.classList.toggle('set', !!x.value));
   };
   q('.f-pick').onchange = () => {
     const p = CFG.projects.find(p => p.name === q('.f-pick').value);
@@ -252,6 +352,9 @@ function addCard(u = {}) {
     sync();
   };
   q('.f-type').onchange = sync;
+  q('.f-status').onchange = sync;
+  q('.f-saved').onchange = sync;
+  el.querySelectorAll('.f-b, .f-n').forEach(t => { const grow = () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }; t.addEventListener('input', grow); requestAnimationFrame(grow); });
   q('.remove').onclick = () => { el.remove(); renumber(); };
   const clear = () => { el.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid')); q('.card-err').hidden = true; };
   el.addEventListener('input', clear);
@@ -263,7 +366,8 @@ function addCard(u = {}) {
 }
 function renumber() {
   const cards = [...document.querySelectorAll('.proj')];
-  cards.forEach((c, i) => { c.querySelector('h3').textContent = `Project ${i + 1}`; c.querySelector('.remove').hidden = cards.length === 1; });
+  cards.forEach(c => { c.querySelector('.remove').hidden = cards.length === 1; });
+  $('proj-count').textContent = cards.length;
 }
 function readCard(el) {
   const q = s => el.querySelector(s);
@@ -272,6 +376,7 @@ function readCard(el) {
     project: (isNew ? q('.f-new').value : q('.f-pick').value).trim(),
     type: q('.f-type').value, status: q('.f-status').value,
     progress: [...el.querySelectorAll('.f-b')].map(t => t.value.trim()).filter(Boolean),
+    nextSteps: [...el.querySelectorAll('.f-n')].map(t => t.value.trim()).filter(Boolean),
     timeSaved: q('.f-saved').value, couldHelp: q('.f-help').value.trim(),
   };
 }
@@ -282,12 +387,67 @@ function checkCard(el, d) {   // the server's rules, checked here to point at th
   if (!d.type) bad.push([q('.f-type'), 'Choose the project type.']);
   if (!d.status) bad.push([q('.f-status'), 'Choose a status.']);
   if (!d.progress.length) bad.push([q('.f-b'), 'Add at least one line of progress.']);
+  if (!d.nextSteps.length) bad.push([q('.f-n'), 'Add at least one next step.']);
   if (d.type === 'Claude' && !d.timeSaved) bad.push([q('.f-saved'), 'Choose how much time Claude saved.']);
   return bad;
 }
 function cardError(el, text, fields = []) {
   fields.forEach(f => f.classList.add('invalid'));
   const e = el.querySelector('.card-err'); e.textContent = text; e.hidden = !text;
+}
+
+// ---- other work ----
+function addTask(t = {}) {
+  const el = document.createElement('div');
+  el.className = 'task';
+  const cats = CFG.taskCategories, known = !t.category || cats.some(c => c.toLowerCase() === t.category.toLowerCase());
+  el.innerHTML = `<span class="ring" aria-hidden="true"></span>
+    <select class="t-cat" aria-label="Kind of work">${options([...cats, {value: '__new', label: 'Something else…'}], 'Kind of work')}</select>
+    <input class="t-new" maxlength="80" placeholder="Name it" aria-label="Name the work" hidden>
+    <select class="t-spent" aria-label="Time spent (optional)">${options(CFG.timeSpent.map(x => ({value: x, label: 'Spent: ' + x})), 'Time spent')}</select>
+    <select class="t-claude" aria-label="Used Claude?">${options([{value: 'yes', label: 'Used Claude'}, {value: 'no', label: 'No Claude'}], 'Used Claude?')}</select>
+    <select class="t-saved" aria-label="Time saved with Claude" hidden>${options(CFG.timeSaved.map(x => ({value: x, label: 'Saved: ' + x})), 'Time saved')}</select>
+    <input class="t-note" maxlength="300" placeholder="Short note (optional)" aria-label="Note (optional)">
+    <button type="button" class="remove" title="Remove" aria-label="Remove this line">×</button>
+    <div class="t-err" hidden></div>`;
+  const q = s => el.querySelector(s);
+  if (t.category) {
+    if (known) q('.t-cat').value = cats.find(c => c.toLowerCase() === t.category.toLowerCase());
+    else { q('.t-cat').value = '__new'; q('.t-new').value = t.category; }
+  }
+  q('.t-spent').value = t.timeSpent || '';
+  q('.t-claude').value = t.claude === true ? 'yes' : t.claude === false ? 'no' : '';
+  q('.t-saved').value = t.timeSaved || '';
+  q('.t-note').value = t.note || '';
+  const sync = () => {
+    q('.t-new').hidden = q('.t-cat').value !== '__new';
+    q('.t-saved').hidden = q('.t-claude').value !== 'yes';
+    el.querySelectorAll('select').forEach(x => x.classList.toggle('set', !!x.value));
+  };
+  el.querySelectorAll('select').forEach(x => x.addEventListener('change', sync));
+  const clear = () => { el.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid')); q('.t-err').hidden = true; };
+  el.addEventListener('input', clear); el.addEventListener('change', clear);
+  q('.remove').onclick = () => el.remove();
+  sync();
+  $('tasks').append(el);
+  return el;
+}
+function readTask(el) {
+  const q = s => el.querySelector(s), c = q('.t-claude').value;
+  return {category: (q('.t-cat').value === '__new' ? q('.t-new').value : q('.t-cat').value).trim(),
+          timeSpent: q('.t-spent').value || null, claude: c === 'yes' ? true : c === 'no' ? false : null,
+          timeSaved: c === 'yes' ? q('.t-saved').value : null, note: q('.t-note').value.trim()};
+}
+function checkTask(el, d) {
+  const q = s => el.querySelector(s), bad = [];
+  if (!d.category) bad.push([q('.t-cat').value === '__new' ? q('.t-new') : q('.t-cat'), 'Choose or name the kind of work.']);
+  if (d.claude === null) bad.push([q('.t-claude'), 'Say whether you used Claude.']);
+  if (d.claude && !d.timeSaved) bad.push([q('.t-saved'), 'Choose how much time Claude saved.']);
+  return bad;
+}
+function taskError(el, text, fields = []) {
+  fields.forEach(f => f.classList.add('invalid'));
+  const e = el.querySelector('.t-err'); e.textContent = text; e.hidden = !text;
 }
 
 // ---- usage ----
@@ -346,7 +506,7 @@ async function send(ev) {
   ev.preventDefault();
   const cards = [...document.querySelectorAll('.proj')];
   // a blank extra card is skipped rather than blocking the send
-  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.status; });
+  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.nextSteps.length || d.status; });
   let firstBad = null;
   used.forEach(c => {
     const bad = checkCard(c, readCard(c));
@@ -355,6 +515,13 @@ async function send(ev) {
   });
   const names = used.map(c => readCard(c).project.toLowerCase());
   used.forEach((c, i) => { if (names[i] && names.indexOf(names[i]) !== i) { cardError(c, 'This project is already listed above. Combine them into one.'); firstBad = firstBad || c; } });
+  // an untouched blank line is skipped
+  const taskEls = [...document.querySelectorAll('.task')].filter(el => { const d = readTask(el); return d.category || d.note || d.timeSpent || d.claude !== null; });
+  taskEls.forEach(el => {
+    const bad = checkTask(el, readTask(el));
+    taskError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
+    if (bad.length && !firstBad) firstBad = el;
+  });
   const ub = checkUsage();
   ub.forEach(b => b[0].classList.add('invalid'));
   $('usage-err').textContent = ub.map(b => b[1]).join(' '); $('usage-err').hidden = !ub.length;
@@ -363,7 +530,7 @@ async function send(ev) {
 
   const inc = incValue();
   const body = {
-    name: $('name').value, week: $('week').value, projects: used.map(readCard),
+    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask),
     usage: {spend: num($('spend').value), budget: num($('budget').value), increaseRequested: inc,
             increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
             screenshot: shotData},
@@ -371,11 +538,12 @@ async function send(ev) {
   const btn = $('send'); btn.disabled = true; msg('Sending…');
   try {
     const r = await api('/api/submit', {method: 'POST', body: JSON.stringify(body)});
-    try { CFG.projects = (await api('/api/config')).projects; } catch (e) {}
+    try { const c = await api('/api/config'); CFG.projects = c.projects; CFG.taskCategories = c.taskCategories; } catch (e) {}
     showDone(r);
   } catch (e) {
     (e.body?.errors || []).forEach(x => {
       if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
+      else if (x.task != null && taskEls[x.task]) taskError(taskEls[x.task], x.error);
       else if (x.project != null && used[x.project]) cardError(used[x.project], x.error);
     });
     msg(e.message, 'err');
@@ -385,10 +553,11 @@ async function send(ev) {
 
 function showDone(r) {
   const u = r.usage, pct = u.budget ? Math.round(100 * u.spend / u.budget) : 0;
-  $('done').innerHTML = `<div class="big">✓</div><h2 style="margin:10px 0 4px">${r.resent ? 'Update re-sent' : 'Sent'}. Thanks, ${esc($('name').value.split(' ')[0])}!</h2>
-    <p class="hint" style="margin:0">Week ending ${esc(fmtWeek($('week').value))}. You've used ${pct}% of your ${money(u.budget)} budget this month.</p>
-    <ul>${r.updates.map(x => `<li><strong>${esc(x.project)}</strong>: ${esc(x.status)}</li>`).join('')}</ul>
-    <p style="margin:18px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
+  $('done').innerHTML = `<div class="big">✓</div><h2>${r.resent ? 'Update re-sent' : 'Sent'}. Thanks, ${esc($('name').value.split(' ')[0])}!</h2>
+    <p class="sub">Week ending ${esc(fmtWeek($('week').value))}. You've used ${pct}% of your ${money(u.budget)} budget this month.</p>
+    <ul>${r.updates.map(x => `<li><span class="ring" data-s="${esc(x.status)}"></span><span style="flex:1"><strong>${esc(x.project)}</strong></span><span class="sub">${esc(x.status)}</span></li>`).join('')}
+      ${r.tasks.map(x => `<li><span class="ring"></span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.timeSpent || '')}</span></li>`).join('')}</ul>
+    <p style="margin:24px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
   $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;
   $('edit').onclick = load;
   scrollTo({top: 0, behavior: 'smooth'});

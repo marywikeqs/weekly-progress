@@ -5,5 +5,7 @@
     {"name": "Rylan Smith", "active": true}
   ],
   "projects": [],
+  "reportEmail": "mwike@quiltsoftware.com",
+  "taskCategories": ["Support Hub", "Deal Desk", "Ad hoc analysis"],
   "screenshotInstructions": "Open claude.ai → Settings → Usage. Set the date range to the 1st of this month through today, so the screenshot shows this month's spend so far. Capture the whole panel, including the date range and the total."
 }
