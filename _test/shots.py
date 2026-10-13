@@ -72,7 +72,7 @@ try:
         check(pg.locator(".invalid").count() >= 5, "empty send marks fields in red")
         c1 = pg.locator(".proj").nth(0)
         c1.locator(".f-pick").select_option("__new"); c1.locator(".f-new").fill("Pipeline Hygiene")
-        c1.locator(".f-type").select_option("Claude"); c1.locator(".f-status").select_option("In progress")
+        c1.locator(".f-type").select_option("Claude")
         c1.locator(".f-b").first.fill("Cleaned stale opps"); c1.locator(".f-saved").select_option("1-3 hrs")
         c1.locator(".f-n").first.fill("Close out Q4 list")
         pg.click("#add")
@@ -81,7 +81,7 @@ try:
         check(c2.locator(".f-type").input_value() == "Claude", "picking a known project fills its type")
         c2.locator(".f-type").select_option("Non-Claude")
         check(c2.locator(".f-help").is_visible() and not c2.locator(".f-saved").is_visible(), "non-Claude shows the could-help box")
-        c2.locator(".f-status").select_option("At risk"); c2.locator(".f-b").first.fill("Waiting on data")
+        c2.locator(".f-b").first.fill("Waiting on data")
         c2.locator(".f-n").first.fill("Chase finance")
         pg.click("#add-task")
         tk = pg.locator(".task").last

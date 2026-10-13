@@ -144,8 +144,8 @@ def run():
     def send(name, week, projects, usage, tasks=None):
         return call("POST", "/api/submit", {"name": name, "week": week, "projects": projects, "usage": usage, "tasks": tasks or []})
 
-    def proj(project, type_, status, progress, saved=None, help_="", steps=None):
-        return {"project": project, "type": type_, "status": status, "progress": progress, "nextSteps": steps or ["Keep going"],
+    def proj(project, type_, _old_status, progress, saved=None, help_="", steps=None):
+        return {"project": project, "type": type_, "progress": progress, "nextSteps": steps or ["Keep going"],
                 "timeSaved": saved, "couldHelp": help_}
 
     hub = {"category": "support hub", "timeSpent": "3-5 hrs", "claude": True, "timeSaved": "1-3 hrs", "note": "Answered rep questions"}
@@ -159,7 +159,7 @@ def run():
            "increase": {"amount": 800, "reason": "Board deck month", "status": "Pending"}, "screenshot": data_url((60, 90, 220))}
 
     print("one send: validation (nothing saved unless all of it is good)")
-    s, d = send("Avery Test", w1, [cat, {**spif, "status": ""}], use)
+    s, d = send("Avery Test", w1, [cat, {**spif, "type": ""}], use)
     check(s == 400 and d["errors"][0]["project"] == 1, "a bad second project is pointed at by index")
     check(call("GET", f"/api/mine?name=Avery%20Test&week={w1}")[1]["usage"] is None, "...and nothing was saved, not even usage")
     s, d = send("Avery Test", w1, [cat, {**cat, "project": "commission audit TOOL"}], use)
@@ -191,7 +191,7 @@ def run():
     check(a_cat["couldHelp"] == "" and d["updates"][1]["timeSaved"] is None, "conditional fields kept only for their type")
     check(d["usage"]["spend"] == 412.5, "$ and commas parsed")
     shot = d["usage"]["screenshot"]
-    s, d = send("Avery Test", w1, [{**cat, "project": "commission audit tool", "status": "At risk"}],
+    s, d = send("Avery Test", w1, [{**cat, "project": "commission audit tool"}],
                 {**use, "spend": 430, "screenshot": None, "increase": {**use["increase"], "status": "Approved"}})
     check(s == 200 and d["resent"], "resend accepted")
     check(d["updates"][0]["id"] == a_cat["id"] and d["updates"][0]["project"] == "Commission Audit Tool", "resend keeps the record, project name canonical")
@@ -254,8 +254,9 @@ def run():
     s, html = call("GET", f"/report?week={w1}", auth=ADMIN, raw=True)
     html = html.decode()
     check(s == 200, "report renders")
-    check(html.index("Commission Audit Tool") < html.index("Board Deck Automation"), "blocked project listed before on-track ones")
-    check(html.count("first reported this week") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
+    check(html.index(">Avery Test<") < html.index(">Blake Test<") < html.index(">Casey Test<"), "digest is by person")
+    check("Blocked" not in html and "At risk" not in html and "Status" not in html, "no status anywhere")
+    check(html.count(">new this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
     check("Drafting the approval matrix" in html, "could-help suggestion shown")
     check("Gone Test" not in html and "Everyone is in" in html, "everyone in; inactive people not counted")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
@@ -265,7 +266,8 @@ def run():
     txt = txt.decode()
     check("~14 hrs (+11.5 hrs vs last week)" in txt, "hours at midpoints: projects 4 + 2 + 6, Support Hub 2 = 14; last week 2 + 0.5")
     check("Other work:* ~4 hrs" in txt, "other work time in the summary")
-    check('id="other"' in html and "Answered rep questions" in html and "Support Hub (other work)" in html, "other work in the report and in Claude impact")
+    check("*Avery Test:* Commission Audit Tool, Spif/Adjustment Process Approval Rehaul · other work: Support Hub" in txt, "one line per person in the summary")
+    check('id="digest"' in html and "Answered rep questions" in html and "Support Hub (other work)" in html, "other work in the report and in Claude impact")
     check(html.count('class="lh">Next steps') >= 5, "next steps shown per update")
     print("    ", txt.replace("\n", "\n     "))
     (OUT / "report.html").write_text(html, encoding="utf-8")

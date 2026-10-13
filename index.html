@@ -6,7 +6,7 @@
 <link rel="icon" href="data:,">
 <title>Weekly Progress</title>
 <style>
-/* Todoist-style: warm sidebar, white page, red accent, thin dividers, priority-coloured status rings */
+/* Todoist-style: warm sidebar, white page, red accent, thin dividers, round markers */
 :root{--bg:#fff;--side:#fcfaf8;--ink:#202020;--muted:#666;--faint:#999;--line:#f0f0f0;--edge:#e6e6e6;--hover:#f5f5f5;
 --accent:#dc4c3e;--accent-hover:#c3392c;--accent-soft:#fff6f0;--on-accent:#fff;
 --p1:#d1453b;--p2:#eb8909;--p3:#246fe0;--p4:#999;--done:#058527;--focus:#dc4c3e40}
@@ -38,10 +38,7 @@ textarea{resize:vertical}
 .proj:focus-within{border-color:var(--faint)}
 .proj-head{display:flex;align-items:center;gap:10px}
 .ring{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--p4);background:transparent}
-.ring[data-s="Blocked"]{border-color:var(--p1);background:color-mix(in srgb,var(--p1) 12%,transparent)}
-.ring[data-s="At risk"]{border-color:var(--p2);background:color-mix(in srgb,var(--p2) 12%,transparent)}
-.ring[data-s="In progress"],.ring[data-s="On track"]{border-color:var(--p3);background:color-mix(in srgb,var(--p3) 10%,transparent)}
-.ring[data-s="Completed"]{border-color:var(--done);background:var(--done)}
+.ring[data-t="Claude"]{border-color:var(--accent)}
 .title{flex:1;min-width:0}
 .title select,.title input{border:0;padding:4px 0;font-size:15px;font-weight:600;background:transparent;box-shadow:none}
 .title select:focus,.title input:focus{box-shadow:none}
@@ -283,8 +280,8 @@ async function load() {
     st.textContent = `You sent this week's update on ${new Date(MINE.usage?.updatedAt || MINE.updates[0].updatedAt).toLocaleString()}. Change anything and send again. Removing a project here removes it from your update.`;
     st.hidden = false;
   } else {
-    const carry = MINE.lastProjects.filter(u => u.status !== 'Completed');
-    carry.forEach(u => addCard({project: u.project, type: u.type, status: u.status}));
+    const carry = MINE.lastProjects;
+    carry.forEach(u => addCard({project: u.project, type: u.type}));
     if (!carry.length) addCard();
     st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one, and remove any you didn't work on this week.` : '';
     st.hidden = !carry.length;
@@ -320,7 +317,6 @@ function addCard(u = {}) {
     </div>
     <div class="chips">
       <select class="f-type" aria-label="Project type">${options([{value: 'Claude', label: 'Claude project'}, {value: 'Non-Claude', label: 'Non-Claude project'}], 'Project type')}</select>
-      <select class="f-status" aria-label="Status">${options(CFG.statuses, 'Status')}</select>
       <span class="saved" hidden><select class="f-saved" aria-label="Time saved with Claude this week">${options(CFG.timeSaved.map(t => ({value: t, label: 'Saved: ' + t})), 'Time saved with Claude')}</select></span>
     </div>
     <div class="help helpline" hidden><input class="f-help" maxlength="300" aria-label="Anything Claude could have helped with? (optional)" placeholder="Anything Claude could have helped with? (optional)"></div>
@@ -331,7 +327,6 @@ function addCard(u = {}) {
     else { q('.f-pick').value = '__new'; q('.f-new').value = u.project; }
   }
   q('.f-type').value = u.type || '';
-  q('.f-status').value = u.status || '';
   el.querySelectorAll('.f-b').forEach((t, i) => t.value = (u.progress || [])[i] || '');
   el.querySelectorAll('.f-n').forEach((t, i) => t.value = (u.nextSteps || [])[i] || '');
   q('.f-saved').value = u.timeSaved || '';
@@ -342,8 +337,7 @@ function addCard(u = {}) {
     q('.newname').hidden = !isNew;
     q('.saved').hidden = q('.f-type').value !== 'Claude';
     q('.help').hidden = q('.f-type').value !== 'Non-Claude';
-    q('.ring').dataset.s = q('.f-status').value;
-    q('.f-status').dataset.s = q('.f-status').value;
+    q('.ring').dataset.t = q('.f-type').value;
     el.querySelectorAll('.chips select').forEach(x => x.classList.toggle('set', !!x.value));
   };
   q('.f-pick').onchange = () => {
@@ -352,7 +346,6 @@ function addCard(u = {}) {
     sync();
   };
   q('.f-type').onchange = sync;
-  q('.f-status').onchange = sync;
   q('.f-saved').onchange = sync;
   el.querySelectorAll('.f-b, .f-n').forEach(t => { const grow = () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }; t.addEventListener('input', grow); requestAnimationFrame(grow); });
   q('.remove').onclick = () => { el.remove(); renumber(); };
@@ -374,7 +367,7 @@ function readCard(el) {
   const isNew = !CFG.projects.length || q('.f-pick').value === '__new';
   return {
     project: (isNew ? q('.f-new').value : q('.f-pick').value).trim(),
-    type: q('.f-type').value, status: q('.f-status').value,
+    type: q('.f-type').value,
     progress: [...el.querySelectorAll('.f-b')].map(t => t.value.trim()).filter(Boolean),
     nextSteps: [...el.querySelectorAll('.f-n')].map(t => t.value.trim()).filter(Boolean),
     timeSaved: q('.f-saved').value, couldHelp: q('.f-help').value.trim(),
@@ -385,7 +378,6 @@ function checkCard(el, d) {   // the server's rules, checked here to point at th
   const isNew = !CFG.projects.length || q('.f-pick').value === '__new';
   if (!d.project) bad.push([isNew ? q('.f-new') : q('.f-pick'), 'Choose or name the project.']);
   if (!d.type) bad.push([q('.f-type'), 'Choose the project type.']);
-  if (!d.status) bad.push([q('.f-status'), 'Choose a status.']);
   if (!d.progress.length) bad.push([q('.f-b'), 'Add at least one line of progress.']);
   if (!d.nextSteps.length) bad.push([q('.f-n'), 'Add at least one next step.']);
   if (d.type === 'Claude' && !d.timeSaved) bad.push([q('.f-saved'), 'Choose how much time Claude saved.']);
@@ -506,7 +498,7 @@ async function send(ev) {
   ev.preventDefault();
   const cards = [...document.querySelectorAll('.proj')];
   // a blank extra card is skipped rather than blocking the send
-  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.nextSteps.length || d.status; });
+  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.nextSteps.length || d.type; });
   let firstBad = null;
   used.forEach(c => {
     const bad = checkCard(c, readCard(c));
@@ -555,7 +547,7 @@ function showDone(r) {
   const u = r.usage, pct = u.budget ? Math.round(100 * u.spend / u.budget) : 0;
   $('done').innerHTML = `<div class="big">✓</div><h2>${r.resent ? 'Update re-sent' : 'Sent'}. Thanks, ${esc($('name').value.split(' ')[0])}!</h2>
     <p class="sub">Week ending ${esc(fmtWeek($('week').value))}. You've used ${pct}% of your ${money(u.budget)} budget this month.</p>
-    <ul>${r.updates.map(x => `<li><span class="ring" data-s="${esc(x.status)}"></span><span style="flex:1"><strong>${esc(x.project)}</strong></span><span class="sub">${esc(x.status)}</span></li>`).join('')}
+    <ul>${r.updates.map(x => `<li><span class="ring" data-t="${esc(x.type)}"></span><span style="flex:1"><strong>${esc(x.project)}</strong></span><span class="sub">${esc(x.type)} project</span></li>`).join('')}
       ${r.tasks.map(x => `<li><span class="ring"></span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.timeSpent || '')}</span></li>`).join('')}</ul>
     <p style="margin:24px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
   $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;

@@ -90,7 +90,6 @@ def plain(r: dict) -> str:
 
 # Email clients ignore most CSS, so everything is inline and table-free where possible.
 INK, MUTED, LINE, RED, AMBER, GREEN, ACCENT = "#1c2230", "#5d6676", "#e3e6eb", "#c92a2a", "#b35c00", "#2b8a3e", "#3b5bdb"
-STATUS_COLOUR = {"Blocked": RED, "At risk": AMBER, "Completed": GREEN, "On track": GREEN, "In progress": ACCENT, "Not started": MUTED}
 
 
 def html(r: dict, note: str = "") -> str:
@@ -101,7 +100,7 @@ def html(r: dict, note: str = "") -> str:
     o = [f'<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:{INK};max-width:640px">']
     if note:
         o.append(f'<p style="background:#fff2df;color:{AMBER};padding:8px 12px;border-radius:6px;margin:0 0 16px">{escape(note)}</p>')
-    o.append(f'<h1 style="font-size:20px;margin:0">Weekly Progress</h1><p {small}>Week ending {escape(report.nice_date(r["week"]))}</p>')
+    o.append(f'<h1 style="font-size:20px;margin:0">Weekly digest</h1><p {small}>Week ending {escape(report.nice_date(r["week"]))}</p>')
 
     def wow(now, before, unit=""):
         if not hp:
@@ -114,35 +113,31 @@ def html(r: dict, note: str = "") -> str:
              + "".join(f'<tr><td style="padding:3px 16px 3px 0;color:{MUTED}">{k}</td><td style="padding:3px 0"><b>{v}</b></td></tr>' for k, v in [
                  ("Sent their update", f"{len(p['complete'])} of {p['roster']}" + (f' <span style="color:{RED};font-weight:400">missing {escape(", ".join(p["missing"]))}</span>' if p["missing"] else "")),
                  ("Projects", f"{c['projects']}{wow(c['projects'], l['projects'])} <span style=\"font-weight:400;color:{MUTED}\">{c['claude']} Claude · {c['nonClaude']} non-Claude</span>"),
-                 ("At risk or blocked", f"{c['atRisk']}{wow(c['atRisk'], l['atRisk'])}"),
+                 ("Other work", f"{len(c['tasks'])} item{'' if len(c['tasks']) == 1 else 's'}" + (f" · ~{c['taskHours']:g} hrs" if c["taskHours"] else "")),
                  ("Time saved with Claude", f"~{c['hours']:g} hrs{wow(c['hours'], l['hours'], ' hrs')}"),
                  ("Claude spend this month", spend),
              ]) + "</table>")
 
-    o.append(f"<h2 {h2}>Projects</h2>")
-    if not r["groups"]:
-        o.append(f'<p {small}>No project updates.</p>')
-    for g in r["groups"]:
-        o.append(f'<div style="margin:0 0 14px;padding-left:10px;border-left:3px solid {RED if g["worst"] in ("Blocked", "At risk") else LINE}">'
-                 f'<b>{escape(g["project"])}</b> <span style="color:{MUTED};font-size:12px">{escape(g["type"] if g["type"] != "Mixed" else "Claude + non-Claude")}'
-                 f'{" · first reported this week" if g["new"] else ""}</span>')
-        for u in g["entries"]:
-            extra = (f'Time saved: {escape(u.get("timeSaved") or "None")}' if u["type"] == "Claude"
+    sub = f'style="font-size:12px;color:{MUTED};margin-top:2px"'
+    ul = 'style="margin:0;padding-left:18px"'
+    if not r["people"]:
+        o.append(f'<p {small}>Nothing sent this week.</p>')
+    for pp in r["people"]:
+        o.append(f"<h2 {h2}>{escape(pp['name'])}</h2>")
+        for u in pp["projects"]:
+            extra = (f'Time saved with Claude: {escape(u.get("timeSaved") or "None")}' if u["type"] == "Claude"
                      else (f'Claude could have helped: {escape(u["couldHelp"])}' if u.get("couldHelp") else ""))
-            o.append(f'<div style="margin-top:4px">{escape(u["name"])} · <b style="color:{STATUS_COLOUR.get(u["status"], MUTED)}">{escape(u["status"])}</b>'
-                     f'<div style="font-size:12px;color:{MUTED};margin-top:2px">Progress</div><ul style="margin:0;padding-left:18px">' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
-                     + (f'<div style="font-size:12px;color:{MUTED};margin-top:2px">Next steps</div><ul style="margin:0;padding-left:18px">' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
+            o.append(f'<div style="margin:0 0 14px;padding-left:10px;border-left:3px solid {ACCENT if u["type"] == "Claude" else LINE}">'
+                     f'<b>{escape(u["project"])}</b> <span style="color:{MUTED};font-size:12px">{escape(u["type"])} project{" · new this week" if u["new"] else ""}</span>'
+                     f'<div {sub}>Progress</div><ul {ul}>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
+                     + (f'<div {sub}>Next steps</div><ul {ul}>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div {small}>{extra}</div>' if extra else "") + "</div>")
-        o.append("</div>")
-
-    if r["other"]:
-        o.append(f"<h2 {h2}>Other work</h2>")
-        for g in r["other"]:
-            o.append(f'<div style="margin:0 0 10px"><b>{escape(g["category"])}</b>'
-                     + (f' <span style="color:{MUTED}">~{g["hours"]:g} hrs</span>' if g["hours"] else "") + '<ul style="margin:2px 0 0;padding-left:18px">'
-                     + "".join(f'<li>{escape(t["name"])}{" · " + escape(t["timeSpent"]) if t.get("timeSpent") else ""}'
+        if pp["tasks"]:
+            hrs = f" · ~{pp['taskHours']:g} hrs" if pp["taskHours"] else ""
+            o.append(f'<div {sub}>Other work{hrs}</div><ul {ul}>'
+                     + "".join(f'<li><b>{escape(t["category"])}</b>{" · " + escape(t["timeSpent"]) if t.get("timeSpent") else ""}'
                                f'{" · Claude saved " + escape(t["timeSaved"]) if t["claude"] else ""}{": " + escape(t["note"]) if t.get("note") else ""}</li>'
-                               for t in g["entries"]) + "</ul></div>")
+                               for t in pp["tasks"]) + "</ul>")
     if r["spend"]:
         o.append(f'<h2 {h2}>Usage and spend</h2><table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;width:100%">'
                  f'<tr style="color:{MUTED};font-size:12px"><td style="padding:4px 8px 4px 0;border-bottom:1px solid {LINE}">Name</td>'

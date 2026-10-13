@@ -13,9 +13,6 @@ from html import escape
 
 # Time-saved ranges counted at their midpoints.
 TIME_SAVED_HOURS = {"None": 0, "Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5+ hrs": 6}
-# Lower = more urgent; groups sort by their most urgent status.
-STATUS_RANK = {"Blocked": 0, "At risk": 1, "Not started": 2, "In progress": 3, "On track": 4, "Completed": 5}
-STATUS_ORDER = ["Blocked", "At risk", "Not started", "In progress", "On track", "Completed"]
 # Other work's time spent, also at midpoints.
 TIME_SPENT_HOURS = {"Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5-10 hrs": 7.5, "10+ hrs": 12}
 FLAG_AT = 80  # percent of budget
@@ -64,9 +61,6 @@ def _week_numbers(data: dict, week: str, roster: list) -> dict:
     ups = [u for u in data["updates"] if u["week"] == week]
     use = [u for u in data["usage"] if u["week"] == week]
     tasks = [t for t in data.get("tasks", []) if t["week"] == week]
-    by_status = {s: 0 for s in STATUS_ORDER}
-    for u in ups:
-        by_status[u["status"]] = by_status.get(u["status"], 0) + 1
     names = {u["name"] for u in ups} | {u["name"] for u in use}
     return {
         "updates": ups, "usage": use, "tasks": tasks,
@@ -74,8 +68,6 @@ def _week_numbers(data: dict, week: str, roster: list) -> dict:
         "projects": len(ups),
         "claude": sum(u["type"] == "Claude" for u in ups),
         "nonClaude": sum(u["type"] != "Claude" for u in ups),
-        "byStatus": by_status,
-        "atRisk": by_status["Blocked"] + by_status["At risk"],
         "hours": sum(hours(u) for u in ups if u["type"] == "Claude") + sum(hours(t) for t in tasks if t["claude"]),
         "taskHours": sum(TIME_SPENT_HOURS.get(t.get("timeSpent") or "", 0) for t in tasks),
         "spend": sum(u["spend"] for u in use),
@@ -99,25 +91,18 @@ def build(data: dict, week: str) -> dict:
         "missing": sorted(n for n in roster if n not in did_proj or n not in did_use),
     }
 
-    # projects, grouped by name; most urgent first
-    groups: dict = {}
-    for u in cur["updates"]:
-        groups.setdefault(u["project"].lower(), []).append(u)
+    # the digest: each person's week, projects then other work
     first_week: dict = {}
     for u in data["updates"]:
         k = u["project"].lower()
         first_week[k] = min(first_week.get(k, u["week"]), u["week"])
-    project_groups = []
-    for entries in groups.values():
-        entries.sort(key=lambda u: (STATUS_RANK.get(u["status"], 9), u["name"]))
-        types = {u["type"] for u in entries}
-        project_groups.append({
-            "project": entries[0]["project"], "entries": entries,
-            "type": types.pop() if len(types) == 1 else "Mixed",
-            "worst": entries[0]["status"], "new": first_week[entries[0]["project"].lower()] == week,
-        })
-    project_groups.sort(key=lambda g: (STATUS_RANK.get(g["worst"], 9) if g["worst"] in ("Blocked", "At risk") else 5,
-                                       g["project"].lower()))
+    people = []
+    for n in sorted({u["name"] for u in cur["updates"]} | {t["name"] for t in cur["tasks"]}):
+        projects = [{**u, "new": first_week[u["project"].lower()] == week}
+                    for u in sorted((u for u in cur["updates"] if u["name"] == n), key=lambda u: u["project"].lower())]
+        tasks = sorted((t for t in cur["tasks"] if t["name"] == n), key=lambda t: t["category"].lower())
+        people.append({"name": n, "projects": projects, "tasks": tasks,
+                       "taskHours": sum(TIME_SPENT_HOURS.get(t.get("timeSpent") or "", 0) for t in tasks)})
 
     # Claude impact
     impact: dict = {}
@@ -158,7 +143,7 @@ def build(data: dict, week: str) -> dict:
     return {
         "week": week, "prevWeek": prev, "hasPrev": has_prev, "sameMonth": same_month,
         "cur": cur, "last": last, "participation": participation,
-        "groups": project_groups, "other": other_groups, "top": top, "suggestions": suggestions,
+        "people": people, "other": other_groups, "top": top, "suggestions": suggestions,
         "spend": spend_rows, "requests": requests,
         "flagged": [u for u in spend_rows if u["flag"]],
         "shots": [u for u in spend_rows if u.get("screenshot")],
@@ -183,12 +168,12 @@ def render_text(r: dict, base_url: str = "") -> str:
     lines.append(f"*Participation:* {len(p['complete'])} of {p['roster']} sent their update"
                  + (f" · hasn't sent: {', '.join(p['missing'])}" if p["missing"] else ""))
     lines.append(f"*Projects:* {c['projects']}{_delta(c['projects'], l['projects'], hp)} — "
-                 f"{c['claude']} Claude · {c['nonClaude']} non-Claude · "
-                 + " · ".join(f"{n} {s}" for s, n in c["byStatus"].items() if n))
-    for g in r["groups"]:
-        for u in g["entries"]:
-            if u["status"] in ("Blocked", "At risk"):
-                lines.append(f"   • {u['status']}: *{u['project']}* ({u['name']}) — {u['progress'][0]}")
+                 f"{c['claude']} Claude · {c['nonClaude']} non-Claude")
+    for pp in r["people"]:
+        line = ", ".join(u["project"] for u in pp["projects"])
+        if pp["tasks"]:
+            line += (" · " if line else "") + "other work: " + ", ".join(t["category"] for t in pp["tasks"])
+        lines.append(f"   • *{pp['name']}:* {line}")
     if r["other"]:
         lines.append(f"*Other work:* ~{c['taskHours']:g} hrs · " + ", ".join(
             f"{g['category']} ({len(g['entries'])})" for g in r["other"]))
@@ -211,7 +196,7 @@ def render_text(r: dict, base_url: str = "") -> str:
 # ---------------- HTML ----------------
 
 # Todoist-style: warm sidebar, white page, red accent, thin dividers, and
-# status shown as Todoist's priority colours on a round marker.
+# round markers (red for Claude work).
 STYLE = """
 :root{--bg:#fff;--side:#fcfaf8;--ink:#202020;--muted:#666;--faint:#999;--line:#f0f0f0;--edge:#e6e6e6;--hover:#f5f5f5;
 --accent:#dc4c3e;--accent-hover:#c3392c;--accent-soft:#fff6f0;--p1:#d1453b;--p2:#eb8909;--p3:#246fe0;--p4:#999;--done:#058527}
@@ -242,13 +227,12 @@ h2{display:flex;align-items:baseline;gap:8px;font-size:15px;margin:34px 0 0;padd
 h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .note{color:var(--muted);font-size:12.5px;margin:8px 0 0}
 .ring{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--p4);margin-top:1px}
-.ring.s-Blocked{border-color:var(--p1);background:color-mix(in srgb,var(--p1) 12%,transparent)}
-.ring.s-At-risk{border-color:var(--p2);background:color-mix(in srgb,var(--p2) 12%,transparent)}
-.ring.s-In-progress,.ring.s-On-track{border-color:var(--p3);background:color-mix(in srgb,var(--p3) 10%,transparent)}
-.ring.s-Completed,.ring.sent{border-color:var(--done);background:var(--done);position:relative}
-.ring.s-Completed::after,.ring.sent::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
-.flag{font-size:12px;font-weight:600}
-.f-Blocked{color:var(--p1)}.f-At-risk{color:var(--p2)}.f-In-progress,.f-On-track{color:var(--p3)}.f-Completed{color:var(--done)}.f-Not-started{color:var(--p4)}
+.ring.claude{border-color:var(--accent)}
+.ring.r-Pending{border-color:var(--p2)}.ring.r-Denied{border-color:var(--p1)}
+.ring.sent,.ring.r-Approved{border-color:var(--done);background:var(--done);position:relative}
+.ring.sent::after,.ring.r-Approved::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.person{font-size:16px;margin-top:28px}
+.sublabel{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin:12px 0 0}
 .label{font-size:12px;color:var(--muted)}
 .label.claude{color:var(--accent)}
 .group-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:22px 0 2px;font-weight:700;font-size:14px}
@@ -284,20 +268,8 @@ h2{break-after:avoid}.row{break-inside:avoid}.gallery{grid-template-columns:repe
 """
 
 
-def _cls(s: str) -> str:
-    return s.replace(" ", "-")
-
-
-def _ring(status: str) -> str:
-    return f'<span class="ring s-{_cls(status)}" title="{escape(status)}"></span>'
-
-
-def _flag(status: str) -> str:
-    return f'<span class="flag f-{_cls(status)}">{escape(status)}</span>'
-
-
 def _label(t: str) -> str:
-    text = {"Claude": "# Claude project", "Non-Claude": "# Non-Claude project", "Mixed": "# Claude + non-Claude"}.get(t, t)
+    text = {"Claude": "# Claude project", "Non-Claude": "# Non-Claude project"}.get(t, t)
     return f'<span class="label{" claude" if t == "Claude" else ""}">{escape(text)}</span>'
 
 
@@ -323,19 +295,18 @@ def render_html(r: dict, weeks: list) -> str:
 <aside><div class="app"><i>✓</i>Weekly Progress</div>
 <form method="get" action="/report"><select name="week" onchange="this.form.submit()" aria-label="Week">{opts}</select></form>
 <nav><a href="#people">Participation <span>{len(p['complete'])}/{p['roster']}</span></a>
-<a href="#projects"{' class="alert"' if c['atRisk'] else ''}>Projects <span>{c['projects']}{f" · {c['atRisk']} at risk" if c['atRisk'] else ""}</span></a>
-<a href="#other">Other work <span>{len(c['tasks'])}</span></a>
+<a href="#digest">The week, by person <span>{c['projects']} proj · {len(c['tasks'])} other</span></a>
 <a href="#impact">Claude impact <span>{c['hours']:g} hrs</span></a>
 <a href="#spend"{' class="alert"' if r['flagged'] else ''}>Usage and spend <span>{money(c['spend'])}</span></a></nav>
 <div class="actions"><button type="button" onclick="copySlack()">Copy Slack summary</button><button type="button" onclick="print()">Print / Save as PDF</button>
 <a href="/export/updates.csv?week={wk}">Projects CSV</a><a href="/export/usage.csv?week={wk}">Usage CSV</a><a href="/admin">Admin</a></div></aside>
-<main><h1>Week ending {escape(nice_date(wk))}</h1><p class="sub">Weekly Progress report</p>"""]
+<main><h1>Week ending {escape(nice_date(wk))}</h1><p class="sub">Weekly digest</p>"""]
 
     spend_note = f"{100 * c['spend'] / c['budget']:.0f}% of {money(c['budget'])}" if c["budget"] else "none reported"
     o.append('<div class="stats">'
              + _stat(f"{len(p['complete'])}/{p['roster']}", "sent their update")
              + _stat(str(c["projects"]), "projects", f"{c['claude']} Claude · {c['nonClaude']} non-Claude")
-             + _stat(str(c["atRisk"]), "at risk or blocked", _wow(c["atRisk"], l["atRisk"], hp))
+             + _stat(f"{c['taskHours']:g} hrs", "on other work", f"{len(c['tasks'])} item{'' if len(c['tasks']) == 1 else 's'}")
              + _stat(f"{c['hours']:g} hrs", "saved with Claude", _wow(c["hours"], l["hours"], hp, lambda v: f"{v:g} hrs"))
              + _stat(money(c["spend"]), "Claude spend this month", spend_note)
              + "</div>")
@@ -350,39 +321,31 @@ def render_html(r: dict, weeks: list) -> str:
     if not p["missing"]:
         o.append('<p class="note">Everyone is in.</p>')
 
-    # projects
-    counts = " · ".join(f"{n} {s.lower()}" for s, n in c["byStatus"].items() if n)
-    o.append(f'<h2 id="projects">Projects <span>{counts}</span></h2>')
-    if not r["groups"]:
-        o.append('<p class="empty">No project updates for this week yet.</p>')
-    for g in r["groups"]:
-        o.append(f'<div class="group-head">{escape(g["project"])} {_label(g["type"])}'
-                 + ('<span class="newp">first reported this week</span>' if g["new"] else "") + "</div>")
-        for u in g["entries"]:
+    # the digest, by person
+    o.append(f'<h2 id="digest">The week, by person <span>{c["projects"]} project{"" if c["projects"] == 1 else "s"}'
+             f' · {len(c["tasks"])} other work item{"" if len(c["tasks"]) == 1 else "s"}</span></h2>')
+    if not r["people"]:
+        o.append('<p class="empty">Nothing sent for this week yet.</p>')
+    for pp in r["people"]:
+        o.append(f'<div class="group-head person">{escape(pp["name"])}</div>')
+        for u in pp["projects"]:
             meta = ""
             if u["type"] == "Claude":
                 meta = f'⏱ Time saved with Claude: {escape(u.get("timeSaved") or "None")}'
             elif u.get("couldHelp"):
                 meta = f'💡 Claude could have helped: {escape(u["couldHelp"])}'
-            o.append(f'<div class="row">{_ring(u["status"])}<div class="body"><div class="top"><strong>{escape(u["name"])}</strong>{_flag(u["status"])}'
-                     + (_label(u["type"]) if g["type"] == "Mixed" else "") + "</div>"
+            o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
+                     f'<div class="top"><strong>{escape(u["project"])}</strong>{_label(u["type"])}'
+                     + ('<span class="label">new this week</span>' if u["new"] else "") + "</div>"
                      + '<div class="lh">Progress</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
                      + ('<div class="lh">Next steps</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div class="meta">{meta}</div>' if meta else "") + "</div></div>")
-
-    # other work
-    o.append(f'<h2 id="other">Other work <span>{len(c["tasks"])} item{"" if len(c["tasks"]) == 1 else "s"}'
-             + (f' · about {c["taskHours"]:g} hrs' if c["taskHours"] else "") + "</span></h2>")
-    if not r["other"]:
-        o.append('<p class="empty">No other work reported.</p>')
-    for g in r["other"]:
-        o.append(f'<div class="group-head">{escape(g["category"])}'
-                 + (f' <span class="label">~{g["hours"]:g} hrs</span>' if g["hours"] else "")
-                 + (f' <span class="label claude">{g["saved"]:g} hrs saved with Claude</span>' if g["saved"] else "") + "</div>")
-        for t in g["entries"]:
+        if pp["tasks"]:
+            o.append('<div class="sublabel">Other work' + (f' · about {pp["taskHours"]:g} hrs' if pp["taskHours"] else "") + "</div>")
+        for t in pp["tasks"]:
             bits = [escape(t["timeSpent"])] if t.get("timeSpent") else []
             bits.append(f'<span class="label claude">Claude saved {escape(t["timeSaved"])}</span>' if t["claude"] else '<span class="label">no Claude</span>')
-            o.append(f'<div class="row"><span class="ring"></span><div class="body"><div class="top"><strong>{escape(t["name"])}</strong>'
+            o.append(f'<div class="row"><span class="ring{" claude" if t["claude"] else ""}"></span><div class="body"><div class="top"><strong>{escape(t["category"])}</strong>'
                      f'<span class="label">{" · ".join(bits)}</span></div>'
                      + (f'<div class="meta">{escape(t["note"])}</div>' if t.get("note") else "") + "</div></div>")
 
@@ -421,7 +384,7 @@ def render_html(r: dict, weeks: list) -> str:
         o.append('<p class="empty">No usage for this week yet.</p>')
     o.append('<div class="group-head">Budget increase requests</div>')
     if r["requests"]:
-        o.append("".join(f'<div class="row"><span class="ring s-{_cls("At risk") if u["increase"]["status"] == "Pending" else ("Completed" if u["increase"]["status"] == "Approved" else "Blocked")}"></span>'
+        o.append("".join(f'<div class="row"><span class="ring r-{escape(u["increase"]["status"])}"></span>'
                          f'<div class="body"><div class="top"><strong>{escape(u["name"])}</strong><span>{money(u["budget"])} → {money(u["increase"]["amount"])}</span>'
                          f'<span class="label">{escape(u["increase"]["status"])}</span></div><div class="meta">{escape(u["increase"]["reason"])}</div></div></div>'
                          for u in r["requests"]))

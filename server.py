@@ -83,7 +83,6 @@ MAX_SHOT = 8 * 1024 * 1024          # the page shrinks big screenshots before se
 SHOT_RX = re.compile(r"^[a-f0-9]{20}\.(png|jpg|webp)$")
 LOCK = threading.Lock()
 
-STATUSES = ["Not started", "In progress", "On track", "At risk", "Blocked", "Completed"]
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
 REQUEST_STATUSES = ["Approved", "Pending", "Denied"]
@@ -201,9 +200,6 @@ def clean_update(d: dict) -> dict | str:
     ptype = d.get("type")
     if ptype not in TYPES:
         return "Pick a project type."
-    status = d.get("status")
-    if status not in STATUSES:
-        return "Pick a status."
     def lines(key):
         out = [re.sub(r"\s+", " ", str(b)).strip()[:500] for b in (d.get(key) or [])]
         return [b for b in out if b][:3]
@@ -213,7 +209,7 @@ def clean_update(d: dict) -> dict | str:
     if not steps:
         return "Add at least one next step."
     out = {"name": name, "week": d["week"], "project": project,
-           "type": ptype, "status": status, "progress": bullets, "nextSteps": steps,
+           "type": ptype, "progress": bullets, "nextSteps": steps,
            "timeSaved": None, "couldHelp": ""}
     if ptype == "Claude":
         if d.get("timeSaved") not in TIME_SAVED:
@@ -410,7 +406,7 @@ def to_csv(rows: list, cols: list) -> bytes:
 UPDATE_COLS = [
     ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]),
     ("Project", lambda r: r["project"]),
-    ("Type", lambda r: r["type"]), ("Status", lambda r: r["status"]),
+    ("Type", lambda r: r["type"]),
     ("Progress this week", lambda r: "\n".join("• " + b for b in r["progress"])),
     ("Next steps", lambda r: "\n".join("• " + b for b in r.get("nextSteps", []))),
     ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
@@ -551,7 +547,7 @@ class Handler(BaseHTTPRequestHandler):
                 "roster": [p["name"] for p in cfg["roster"] if p["active"]],
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
-                "statuses": STATUSES, "timeSaved": TIME_SAVED, "requestStatuses": REQUEST_STATUSES,
+                "timeSaved": TIME_SAVED, "requestStatuses": REQUEST_STATUSES,
                 "taskCategories": task_categories(), "timeSpent": TIME_SPENT,
                 "writable": WRITABLE, "persistent": state_persistent(),
             })
