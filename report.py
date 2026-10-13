@@ -9,7 +9,7 @@ Kept apart from server.py so a scheduled Slack/email send can reuse build().
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from html import escape
 
 # Time-saved ranges counted at their midpoints.
@@ -45,6 +45,31 @@ def default_week(data: dict) -> str:
     weeks = [w for w in weeks_with_data(data) if w <= cur and any(
         r["week"] == w for r in data["updates"] + data["usage"])]
     return weeks[0] if weeks else cur
+
+
+# Updates are due by 11 PM Eastern on the Friday the week ends. US Eastern is
+# worked out here (DST: 2nd Sunday of March to 1st Sunday of November) so the
+# deadline doesn't depend on the server image having a timezone database.
+DEADLINE_HOUR = 23
+
+
+def _eastern_offset(d: date) -> timedelta:
+    mar = date(d.year, 3, 8) + timedelta(days=(6 - date(d.year, 3, 8).weekday()) % 7)
+    nov = date(d.year, 11, 1) + timedelta(days=(6 - date(d.year, 11, 1).weekday()) % 7)
+    return timedelta(hours=-4 if mar <= d < nov else -5)
+
+
+def deadline(week: str) -> datetime:
+    """Friday 11 PM Eastern for the week ending `week`, as a UTC datetime."""
+    d = date.fromisoformat(week)
+    return datetime(d.year, d.month, d.day, DEADLINE_HOUR, tzinfo=timezone(_eastern_offset(d))).astimezone(timezone.utc)
+
+
+def eastern(iso_utc: str) -> str:
+    """'2026-10-17T13:14:00+00:00' -> 'Sat, Oct 17, 9:14 AM ET'."""
+    t = datetime.fromisoformat(iso_utc)
+    t = t.astimezone(timezone(_eastern_offset((t - timedelta(hours=5)).date())))
+    return f"{t:%a}, {t:%b} {t.day}, {t.hour % 12 or 12}:{t:%M} {'AM' if t.hour < 12 else 'PM'} ET"
 
 
 def nice_date(iso: str) -> str:
@@ -88,6 +113,14 @@ def build(data: dict, week: str) -> dict:
         "complete": sorted(n for n in roster if n in did_proj and n in did_use),
         "missing": sorted(n for n in roster if n not in did_proj or n not in did_use),
     }
+    # late = first sent after the deadline (later edits don't count)
+    due = deadline(week)
+    participation["deadline"] = f"Fri, {due.astimezone(timezone(_eastern_offset(date.fromisoformat(week)))):%b} {date.fromisoformat(week).day}, 11 PM ET"
+    participation["late"] = [{"name": u["name"], "at": eastern(u["submittedAt"])}
+                             for u in sorted(cur["usage"], key=lambda u: u["name"])
+                             if u["name"] in participation["complete"] and u.get("submittedAt")
+                             and datetime.fromisoformat(u["submittedAt"]) > due]
+    participation["overdue"] = datetime.now(timezone.utc) > due
 
     # the digest: each person's week, projects then other work
     first_week: dict = {}
@@ -166,6 +199,7 @@ def render_text(r: dict, base_url: str = "") -> str:
     c, l, p, hp = r["cur"], r["last"], r["participation"], r["hasPrev"]
     lines = [f"*Weekly Progress — week ending {nice_date(r['week'])}*", ""]
     lines.append(f"*Participation:* {len(p['complete'])} of {p['roster']} sent their update"
+                 + (" · missed the deadline: " + ", ".join(f"{x['name']} (sent {x['at']})" for x in p["late"]) if p["late"] else "")
                  + (f" · hasn't sent: {', '.join(p['missing'])}" if p["missing"] else ""))
     lines.append(f"*Projects:* {c['projects']}{_delta(c['projects'], l['projects'], hp)} — "
                  f"{c['claude']} Claude · {c['nonClaude']} non-Claude")
@@ -251,6 +285,7 @@ h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .glance{display:grid;gap:2px;margin-top:8px;background:color-mix(in srgb,#ff9933 6%,var(--bg));border:1px solid color-mix(in srgb,#ff9933 25%,var(--bg));border-radius:10px;padding:8px 14px}
 .g-row{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--line)}.g-row:last-child{border-bottom:0}
 .g-row .av{margin-top:1px}.g-proj{font-size:13.5px}.g-other{font-size:12.5px;color:var(--muted)}
+.late{font-size:12px;font-weight:600;color:var(--p1)}
 .g-help{margin:4px 0 0;padding-left:18px;font-size:13.5px}
 .pcard{border:1px solid var(--edge);border-left:4px solid var(--c);border-radius:10px;padding:12px 16px 4px;margin-top:16px;background:color-mix(in srgb,var(--c) 4%,var(--bg))}
 .pcard .row:last-child{border-bottom:0}
@@ -350,7 +385,7 @@ def render_html(r: dict, weeks: list) -> str:
 
     spend_note = f"{100 * c['spend'] / c['budget']:.0f}% of {money(c['budget'])}" if c["budget"] else "none reported"
     o.append('<div class="stats">'
-             + _stat(f"{len(p['complete'])}/{p['roster']}", "sent their update", "everyone's in" if not p["missing"] else f"{len(p['missing'])} to go", GREEN)
+             + _stat(f"{len(p['complete'])}/{p['roster']}", "sent their update", (f"{len(p['late'])} late" if p["late"] else "everyone's in") if not p["missing"] else f"{len(p['missing'])} to go", ORANGE if p["late"] else GREEN)
              + _stat(str(c["projects"]), "projects", f"{c['claude']} Claude · {c['nonClaude']} non-Claude", BLUE)
              + _stat(f"{c['hours']:g} hrs", "saved with Claude", _wow(c["hours"], l["hours"], hp, lambda v: f"{v:g} hrs"), ACCENT)
              + _stat(money(c["spend"]), "Claude spend this month", spend_note, GRAPE)
@@ -373,13 +408,17 @@ def render_html(r: dict, weeks: list) -> str:
 
     # participation
     o.append(f'<h2 id="people" style="--c:{GREEN}">Participation <span>{len(p["complete"])} of {p["roster"]}</span></h2><div class="people">')
+    late = {x["name"]: x["at"] for x in p["late"]}
     for n in p["complete"]:
-        o.append(f'<div class="row">{_av(n, pc[n], "sm")}<div class="body">{escape(n)}</div><span class="ring sent" title="Sent"></span></div>')
+        o.append(f'<div class="row">{_av(n, pc[n], "sm")}<div class="body">{escape(n)}'
+                 + (f'<div class="late">Late: sent {escape(late[n])}</div>' if n in late else "")
+                 + '</div><span class="ring sent" title="Sent"></span></div>')
     for n in p["missing"]:
-        o.append(f'<div class="row missing">{_av(n, pc[n], "sm off")}<div class="body">{escape(n)} <span class="label">hasn\'t sent yet</span></div></div>')
+        o.append(f'<div class="row missing">{_av(n, pc[n], "sm off")}<div class="body">{escape(n)} <span class="label">hasn\'t sent yet</span>'
+                 + ('<div class="late">Past the deadline</div>' if p["overdue"] else "") + "</div></div>")
     o.append("</div>")
-    if not p["missing"]:
-        o.append('<p class="note">Everyone is in.</p>')
+    o.append(f'<p class="note">Due {escape(p["deadline"])}. '
+             + ("Everyone is in" + (", on time." if not p["late"] else f'; {len(p["late"])} missed the deadline.') if not p["missing"] else "") + "</p>")
 
     # the digest, by person
     o.append(f'<h2 id="digest" style="--c:{BLUE}">The week, by person <span>{c["projects"]} project{"" if c["projects"] == 1 else "s"}'

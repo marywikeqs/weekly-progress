@@ -75,6 +75,8 @@ def send(to: list, subject: str, html: str, text: str) -> tuple:
 def subject(r: dict) -> str:
     p = r["participation"]
     who = f"all {p['roster']} in" if not p["missing"] else f"{len(p['complete'])} of {p['roster']} in, missing {', '.join(p['missing'])}"
+    if p["late"]:
+        who += f", {len(p['late'])} late"
     return f"Weekly Progress, week ending {report.nice_date(r['week'])} ({who})"
 
 
@@ -113,6 +115,12 @@ def html(r: dict, note: str = "") -> str:
         o.append(f'<p style="background:#fff2df;color:{AMBER};padding:8px 12px;border-radius:6px;margin:0 0 16px">{escape(note)}</p>')
     o.append(f'<div style="background:{report.ACCENT};color:#fff;border-radius:10px;padding:16px 20px"><div style="font-size:20px;font-weight:bold">Weekly digest</div>'
              f'<div style="font-size:13px;opacity:.9">Week ending {escape(report.nice_date(r["week"]))}</div></div>')
+    if p["late"]:
+        o.append(f'<div style="margin-top:12px;background:#fff4e5;border:1px solid #ffc078;border-left:4px solid {RED};border-radius:8px;padding:10px 14px">'
+                 f'<b style="color:{RED}">Missed the deadline</b> <span style="color:{MUTED}">(due {escape(p["deadline"])})</span><ul style="margin:4px 0 0;padding-left:18px">'
+                 + "".join(f'<li><b>{escape(x["name"])}</b>: sent {escape(x["at"])}</li>' for x in p["late"]) + "</ul></div>")
+    else:
+        o.append(f'<p style="margin:10px 0 0;color:{GREEN};font-size:13px">✓ Everyone sent on time (due {escape(p["deadline"])}).</p>')
 
     def wow(now, before, unit=""):
         if not hp:
@@ -123,7 +131,7 @@ def html(r: dict, note: str = "") -> str:
     spend = f"{report.money(c['spend'])} of {report.money(c['budget'])} ({100 * c['spend'] / c['budget']:.0f}%)" if c["budget"] else "none reported"
     tiles = [
         (report.GREEN, f"{len(p['complete'])}/{p['roster']}", "sent their update",
-         f'missing {escape(", ".join(p["missing"]))}' if p["missing"] else "everyone's in"),
+         f'missing {escape(", ".join(p["missing"]))}' if p["missing"] else (f"{len(p['late'])} late" if p["late"] else "all on time")),
         (report.BLUE, str(c["projects"]), "projects", f"{c['claude']} Claude · {c['nonClaude']} non-Claude{wow(c['projects'], l['projects'])}"),
         (report.ACCENT, f"~{c['hours']:g} hrs", "saved with Claude", wow(c["hours"], l["hours"], " hrs").strip()),
         (report.GRAPE, report.money(c["spend"]), "Claude spend", spend),

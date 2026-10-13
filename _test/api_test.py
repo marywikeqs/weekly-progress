@@ -252,6 +252,18 @@ def run():
     check(s == 200 and b[1:4] == b"PNG", "admin can open screenshots")
     check(call("GET", "/screenshots/..%2Fconfig.json", auth=ADMIN)[0] == 404, "no path tricks")
 
+    print("deadline")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import report as rp
+    check(rp.deadline("2026-10-16").isoformat() == "2026-10-17T03:00:00+00:00", "Fri 11 PM EDT = 03:00 UTC Sat")
+    check(rp.deadline("2026-11-06").isoformat() == "2026-11-07T04:00:00+00:00", "Fri 11 PM EST = 04:00 UTC Sat (after DST ends)")
+    check(rp.eastern("2026-10-17T13:14:00+00:00") == "Sat, Oct 17, 9:14 AM ET", "times shown in Eastern")
+    s, txt0 = call("GET", f"/report.txt?week={w0}", auth=ADMIN, raw=True)
+    txt0 = txt0.decode()
+    check("missed the deadline: Avery Test" in txt0 and "Blake Test (sent" in txt0, "last week's sends (made today) are called out as late")
+    s, t1 = call("GET", f"/report.txt?week={w1}", auth=ADMIN, raw=True)
+    check("missed the deadline" not in t1.decode(), "this week's sends are on time")
+
     print("report")
     s, html = call("GET", f"/report?week={w1}", auth=ADMIN, raw=True)
     html = html.decode()

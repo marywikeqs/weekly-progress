@@ -10,7 +10,7 @@ The team's weekly check-in, and the CRO's report built from it.
   Nothing saves unless all of it is valid. A new week starts from last week's unfinished projects, other work and budget, and sending again in the same week replaces that week's update.
 - **Weekly report** (`/report`): a weekly digest: participation, then each person's week (their projects with progress and next steps, then their other work), Claude time saved (range midpoints: None 0, Under 1 hr 0.5, 1–3 hrs 2, 3–5 hrs 4, 5+ hrs 6), Claude-could-help ideas, spend vs budget (over 80% flagged), budget requests and the screenshots, with week-over-week comparison. It has buttons for Print / PDF and Copy Slack summary (`/report.txt`).
 - **Admin** (`/admin`): roster, report email address, project settings (default type, hide), kinds of other work, screenshot instructions, a test-email button, and CSV exports of everything.
-- **Report email:** sent once a week through [Resend](https://resend.com), only once everyone on the roster has sent; there is no partial or deadline send. Later edits don't resend. The admin page's test button sends a preview any time.
+- **Report email:** sent once a week through [Resend](https://resend.com), only once everyone on the roster has sent; there is no partial send. Updates are due Friday 11 PM Eastern; anyone whose first send came after that is called out as late (email banner, report, Slack summary). Later edits don't resend. The admin page's test button sends a preview any time.
 
 ## Running it
 
