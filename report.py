@@ -8,6 +8,7 @@ Kept apart from server.py so a scheduled Slack/email send can reuse build().
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from html import escape
 
@@ -114,9 +115,13 @@ def build(data: dict, week: str) -> dict:
             if t["name"] not in i["people"]:
                 i["people"].append(t["name"])
     top = sorted((i for i in impact.values() if i["hours"] > 0), key=lambda i: (-i["hours"], i["project"].lower()))[:5]
-    suggestions = sorted(({"project": u["project"], "name": u["name"], "text": u["couldHelp"]}
-                          for u in cur["updates"] if u["type"] != "Claude" and u.get("couldHelp")),
-                         key=lambda s: (s["project"].lower(), s["name"]))
+    # "where could Claude have helped": the weekly retro answer, plus any per-project
+    # notes from before that question moved to the end of the form
+    suggestions = sorted([{"project": "", "name": u["name"], "text": u["retro"]} for u in cur["usage"]
+                          if u.get("retro") and not re.fullmatch(r"(?i)\W*(nothing|none|n/?a|no)\b.*", u["retro"])]
+                         + [{"project": u["project"], "name": u["name"], "text": u["couldHelp"]}
+                            for u in cur["updates"] if u["type"] != "Claude" and u.get("couldHelp")],
+                         key=lambda s: (s["name"], s["project"].lower()))
 
     # other work, grouped by kind
     other: dict = {}
@@ -176,7 +181,8 @@ def render_text(r: dict, base_url: str = "") -> str:
     lines.append(f"*Claude time saved:* ~{c['hours']:g} hrs{_delta(c['hours'], l['hours'], hp, ' hrs')}"
                  + (f" · top: {top}" if top else ""))
     if r["suggestions"]:
-        lines.append(f"*Where Claude could help:* {len(r['suggestions'])} idea{'s' if len(r['suggestions']) != 1 else ''} from non-Claude projects")
+        lines.append("*Where Claude could have helped:*")
+        lines += [f"   • {s['name']}: {s['text']}" for s in r["suggestions"]]
     if c["budget"]:
         lines.append(f"*Spend:* {money(c['spend'])} of {money(c['budget'])} monthly budget ({100 * c['spend'] / c['budget']:.0f}%)"
                      + (" · over 80%: " + ", ".join(f"{u['name']} ({u['pct']:.0f}%)" for u in r["flagged"]) if r["flagged"] else ""))
@@ -242,6 +248,10 @@ h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .ring.r-Pending{border-color:var(--p2)}.ring.r-Denied{border-color:var(--p1)}
 .ring.sent,.ring.r-Approved{border-color:var(--done);background:var(--done);position:relative}
 .ring.sent::after,.ring.r-Approved::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.glance{display:grid;gap:2px;margin-top:8px;background:color-mix(in srgb,#ff9933 6%,var(--bg));border:1px solid color-mix(in srgb,#ff9933 25%,var(--bg));border-radius:10px;padding:8px 14px}
+.g-row{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--line)}.g-row:last-child{border-bottom:0}
+.g-row .av{margin-top:1px}.g-proj{font-size:13.5px}.g-other{font-size:12.5px;color:var(--muted)}
+.g-help{margin:4px 0 0;padding-left:18px;font-size:13.5px}
 .pcard{border:1px solid var(--edge);border-left:4px solid var(--c);border-radius:10px;padding:12px 16px 4px;margin-top:16px;background:color-mix(in srgb,var(--c) 4%,var(--bg))}
 .pcard .row:last-child{border-bottom:0}
 .pcard .row ul li::marker{color:var(--c)}
@@ -328,7 +338,8 @@ def render_html(r: dict, weeks: list) -> str:
 <link rel="icon" href="data:,"><title>Weekly Progress Report</title><style>{STYLE}</style></head><body><div class="layout">
 <aside><div class="app"><i>✓</i>Weekly Progress</div>
 <form method="get" action="/report"><select name="week" onchange="this.form.submit()" aria-label="Week">{opts}</select></form>
-<nav><a href="#people" style="--c:{GREEN}"><i></i><em>Participation</em><span>{len(p['complete'])}/{p['roster']}</span></a>
+<nav><a href="#glance" style="--c:{ORANGE}"><i></i><em>At a glance</em><span></span></a>
+<a href="#people" style="--c:{GREEN}"><i></i><em>Participation</em><span>{len(p['complete'])}/{p['roster']}</span></a>
 <a href="#digest" style="--c:{BLUE}"><i></i><em>The week, by person</em><span>{c['projects']} proj · {len(c['tasks'])} other</span></a>
 {"".join(f'<a href="#p-{i}" style="--c:{pc[pp["name"]]};padding-left:26px"><i></i><em>{escape(pp["name"])}</em><span>{len(pp["projects"]) + len(pp["tasks"])}</span></a>' for i, pp in enumerate(r["people"]))}
 <a href="#impact" style="--c:{ACCENT}"><i></i><em>Claude impact</em><span>{c['hours']:g} hrs</span></a>
@@ -344,6 +355,21 @@ def render_html(r: dict, weeks: list) -> str:
              + _stat(f"{c['hours']:g} hrs", "saved with Claude", _wow(c["hours"], l["hours"], hp, lambda v: f"{v:g} hrs"), ACCENT)
              + _stat(money(c["spend"]), "Claude spend this month", spend_note, GRAPE)
              + "</div>")
+
+    # at a glance
+    o.append(f'<h2 id="glance" style="--c:{ORANGE}">At a glance <span>what the team worked on</span></h2>')
+    if not r["people"]:
+        o.append('<p class="empty">Nothing sent for this week yet.</p>')
+    o.append('<div class="glance">')
+    for pp in r["people"]:
+        o.append(f'<div class="g-row">{_av(pp["name"], pc[pp["name"]], "sm")}<div><strong>{escape(pp["name"])}</strong>'
+                 f'<div class="g-proj">{escape(" · ".join(u["project"] for u in pp["projects"]))}</div>'
+                 + (f'<div class="g-other">Other: {escape(", ".join(dict.fromkeys(t["category"] for t in pp["tasks"])))}</div>' if pp["tasks"] else "")
+                 + "</div></div>")
+    o.append("</div>")
+    if r["suggestions"]:
+        o.append('<div class="sublabel" style="--c:#dc4c3e">Where Claude could have helped</div><ul class="g-help">'
+                 + "".join(f'<li><b>{escape(s["name"])}:</b> {escape(s["text"])}</li>' for s in r["suggestions"]) + "</ul>")
 
     # participation
     o.append(f'<h2 id="people" style="--c:{GREEN}">Participation <span>{len(p["complete"])} of {p["roster"]}</span></h2><div class="people">')
@@ -396,8 +422,9 @@ def render_html(r: dict, weeks: list) -> str:
         o.append('<p class="empty">No time saved reported.</p>')
     o.append('</div><div><div class="group-head">Where Claude could have helped</div>')
     if r["suggestions"]:
-        o.append("".join(f'<div class="row"><span class="ring"></span><div class="body"><strong>{escape(s["project"])}</strong> '
-                         f'<span class="label">{escape(s["name"])}</span><div class="meta">{escape(s["text"])}</div></div></div>' for s in r["suggestions"]))
+        o.append("".join(f'<div class="row">{_av(s["name"], pc.get(s["name"], BLUE), "sm")}<div class="body"><strong>{escape(s["name"])}</strong> '
+                         + (f'<span class="label">{escape(s["project"])}</span>' if s["project"] else "")
+                         + f'<div class="meta">{escape(s["text"])}</div></div></div>' for s in r["suggestions"]))
     else:
         o.append('<p class="empty">No suggestions this week.</p>')
     o.append("</div></div>")

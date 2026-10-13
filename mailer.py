@@ -134,6 +134,27 @@ def html(r: dict, note: str = "") -> str:
     o.append(f'<table cellpadding="0" cellspacing="0" width="100%" style="margin-top:12px;border-collapse:collapse"><tr>{"".join(cells[:2])}</tr>'
              f'<tr>{"".join(cells[2:])}</tr></table>')
 
+    # At a glance: one line per person, then the retro answers; the full breakdown follows
+    if r["people"]:
+        rows = []
+        for pp in r["people"]:
+            col = pc[pp["name"]]
+            initials = "".join(w[0] for w in pp["name"].split()[:2]).upper()
+            other = ", ".join(dict.fromkeys(t["category"] for t in pp["tasks"]))
+            rows.append(f'<tr><td valign="top" style="padding:7px 10px 7px 0;border-bottom:1px solid {LINE};width:26px">'
+                        f'<span style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:12px;background:{col};color:#fff;font-size:10px;font-weight:bold">{escape(initials)}</span></td>'
+                        f'<td valign="top" style="padding:7px 0;border-bottom:1px solid {LINE}"><b>{escape(pp["name"])}</b><br>'
+                        f'{escape(" · ".join(u["project"] for u in pp["projects"]))}'
+                        + (f'<br><span style="color:{MUTED};font-size:13px">Other: {escape(other)}</span>' if other else "") + "</td></tr>")
+        o.append(f'<div style="margin-top:16px;background:{tint(report.ORANGE, .07)};border:1px solid {tint(report.ORANGE, .3)};border-radius:8px;padding:12px 14px">'
+                 f'<div style="font-size:12px;font-weight:bold;letter-spacing:.04em;color:{shade(report.ORANGE)}">AT A GLANCE</div>'
+                 f'<table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;font-size:14px">{"".join(rows)}</table>')
+        if r["suggestions"]:
+            o.append(f'<div style="font-size:12px;font-weight:bold;letter-spacing:.04em;color:{report.ACCENT};margin-top:12px">WHERE CLAUDE COULD HAVE HELPED</div>'
+                     f'<ul style="margin:4px 0 0;padding-left:18px">'
+                     + "".join(f'<li><b>{escape(s["name"])}:</b> {escape(s["text"])}</li>' for s in r["suggestions"]) + "</ul>")
+        o.append(f'</div><h2 {h2}>Full breakdown</h2>')
+
     sub = f'style="font-size:12px;color:{MUTED};margin-top:2px"'
     ul = 'style="margin:0;padding-left:18px"'
     if not r["people"]:
@@ -173,9 +194,6 @@ def html(r: dict, note: str = "") -> str:
         o.append(f'<h2 {h2}>Budget increase requests</h2><ul style="margin:0;padding-left:18px">'
                  + "".join(f'<li>{escape(u["name"])}: {report.money(u["budget"])} → {report.money(u["increase"]["amount"])} '
                            f'({escape(u["increase"]["status"])}). {escape(u["increase"]["reason"])}</li>' for u in r["requests"]) + "</ul>")
-    if r["suggestions"]:
-        o.append(f'<h2 {h2}>Where Claude could have helped</h2><ul style="margin:0;padding-left:18px">'
-                 + "".join(f'<li><b>{escape(s["project"])}</b> ({escape(s["name"])}): {escape(s["text"])}</li>' for s in r["suggestions"]) + "</ul>")
 
     o.append(f'<p style="margin:24px 0 8px"><a href="{escape(link)}" style="display:inline-block;background:{report.ACCENT};color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold">'
              f'Open the full report</a></p><p {small}>The full report has the usage screenshots and the latest edits. It needs the admin login.</p></div>')

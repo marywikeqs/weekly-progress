@@ -104,6 +104,14 @@ button:disabled{opacity:.6;cursor:default}
       <button type="button" class="add-line" id="add-task">+ Add other work</button>
     </div>
 
+    <h2>Looking back</h2>
+    <div class="card" id="retro-card">
+      <label for="retro">Where could Claude have helped this week?</label>
+      <p class="hint" style="margin:0 0 6px">Anything that took longer than it should have, or that Claude could have drafted, checked or sped up. If nothing comes to mind, write "Nothing this week".</p>
+      <textarea id="retro" rows="2" maxlength="500" placeholder="e.g. Pulling the data for the board deck by hand"></textarea>
+      <div class="card-err" id="retro-err" hidden></div>
+    </div>
+
     <h2>Claude usage</h2>
     <div class="card" id="usage">
       <div class="row">
@@ -260,8 +268,6 @@ function addCard(u = {}) {
     <span class="lbl">Next steps</span>
     ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Another line' : 'What\'s next'}"></textarea></div>`).join('')}
     <button type="button" class="more">+ Add a line</button>
-    <div class="help" hidden><label for="c${id}">Anything Claude could have helped with? <span class="opt">(optional)</span></label>
-      <input id="c${id}" class="f-help" maxlength="300" placeholder="A step that could have been faster with Claude"></div>
     <div class="card-err" hidden></div>`;
   const q = s => el.querySelector(s);
   if (u.project) {
@@ -271,12 +277,10 @@ function addCard(u = {}) {
   q('.f-type').value = u.type || '';
   el.querySelectorAll('.f-b').forEach((t, i) => t.value = (u.progress || [])[i] || '');
   el.querySelectorAll('.f-n').forEach((t, i) => t.value = (u.nextSteps || [])[i] || '');
-  q('.f-help').value = u.couldHelp || '';
   const sync = () => {
     const isNew = !learned || q('.f-pick').value === '__new';
     q('.f-new').hidden = !isNew;
     q('.newname').hidden = !isNew;
-    q('.help').hidden = q('.f-type').value !== 'Non-Claude';
   };
   q('.f-pick').onchange = () => {
     const p = CFG.projects.find(p => p.name === q('.f-pick').value);
@@ -317,7 +321,6 @@ function readCard(el) {
     type: q('.f-type').value,
     progress: [...el.querySelectorAll('.f-b')].map(t => t.value.trim()).filter(Boolean),
     nextSteps: [...el.querySelectorAll('.f-n')].map(t => t.value.trim()).filter(Boolean),
-    couldHelp: q('.f-help').value.trim(),
   };
 }
 function checkCard(el, d) {   // the server's rules, checked here to point at the field
@@ -394,8 +397,10 @@ function incValue() { const r = document.querySelector('input[name=inc]:checked'
 function clearUsage() { document.querySelectorAll('#usage .invalid').forEach(x => x.classList.remove('invalid')); $('usage-err').hidden = true; }
 $('usage').addEventListener('input', clearUsage);
 $('usage').addEventListener('change', clearUsage);
+$('retro').addEventListener('input', () => { $('retro').classList.remove('invalid'); $('retro-err').hidden = true; });
 function fillUsage() {
   const u = MINE.usage;
+  $('retro').value = u?.retro || ''; $('retro').classList.remove('invalid'); $('retro-err').hidden = true;
   shotData = null; $('shot').value = ''; $('shot-preview').style.display = 'none';
   $('spend').value = u ? u.spend : '';
   $('budget').value = u ? u.budget : (MINE.lastBudget ?? '');
@@ -461,6 +466,10 @@ async function send(ev) {
     taskError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
     if (bad.length && !firstBad) firstBad = el;
   });
+  if (!$('retro').value.trim()) {
+    $('retro').classList.add('invalid'); $('retro-err').textContent = 'Say where Claude could have helped, or write "Nothing this week".'; $('retro-err').hidden = false;
+    if (!firstBad) firstBad = $('retro-card');
+  }
   const ub = checkUsage();
   ub.forEach(b => b[0].classList.add('invalid'));
   $('usage-err').textContent = ub.map(b => b[1]).join(' '); $('usage-err').hidden = !ub.length;
@@ -469,7 +478,7 @@ async function send(ev) {
 
   const inc = incValue();
   const body = {
-    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask),
+    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), retro: $('retro').value.trim(),
     usage: {spend: num($('spend').value), budget: num($('budget').value), increaseRequested: inc,
             increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
             screenshot: shotData},
@@ -481,7 +490,8 @@ async function send(ev) {
     showDone(r);
   } catch (e) {
     (e.body?.errors || []).forEach(x => {
-      if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
+      if (x.retro) { $('retro').classList.add('invalid'); $('retro-err').textContent = x.error; $('retro-err').hidden = false; }
+      else if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
       else if (x.task != null && taskEls[x.task]) taskError(taskEls[x.task], x.error);
       else if (x.project != null && used[x.project]) cardError(used[x.project], x.error);
     });

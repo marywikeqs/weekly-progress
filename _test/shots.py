@@ -84,7 +84,6 @@ try:
         c2.locator(".f-pick").select_option("Board Deck Automation")
         check(c2.locator(".f-type").input_value() == "Claude", "picking a known project fills its type")
         c2.locator(".f-type").select_option("Non-Claude")
-        check(c2.locator(".f-help").is_visible() and not c1.locator(".f-help").is_visible(), "non-Claude shows the could-help box")
         c2.locator(".f-b").first.fill("Waiting on data")
         c2.locator(".f-n").first.fill("Chase finance")
         pg.click("#add-task")
@@ -94,6 +93,7 @@ try:
         check(tk.locator(".t-saved").is_visible(), "Used Claude shows time saved")
         tk.locator(".t-saved").select_option("Under 1 hr"); tk.locator(".t-note").fill("Two deal reviews")
         pg.click("#add")   # a third, left blank: skipped on send
+        pg.fill("#retro", "Summarizing the deal desk notes");
         pg.fill("#spend", "75"); pg.fill("#budget", "250"); pg.check("input[name=inc][value=no]")
         pg.set_input_files("#shot", str(OUT / "form-phone-light.png"))
         pg.wait_for_timeout(500)

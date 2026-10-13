@@ -210,8 +210,6 @@ def clean_update(d: dict) -> dict | str:
     out = {"name": name, "week": d["week"], "project": project,
            "type": ptype, "progress": bullets, "nextSteps": steps,
            "timeSaved": None, "couldHelp": ""}
-    if ptype != "Claude":
-        out["couldHelp"] = re.sub(r"\s+", " ", str(d.get("couldHelp", ""))).strip()[:300]
     return out
 
 
@@ -419,6 +417,7 @@ USAGE_COLS = [
     ("Requested budget", lambda r: (r.get("increase") or {}).get("amount", "")),
     ("Reason", lambda r: (r.get("increase") or {}).get("reason", "")),
     ("Request status", lambda r: (r.get("increase") or {}).get("status", "")),
+    ("Where Claude could have helped", lambda r: r.get("retro", "")),
     ("Screenshot", lambda r: f"/screenshots/{r['screenshot']}" if r.get("screenshot") else ""),
     ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
 ]
@@ -648,6 +647,9 @@ class Handler(BaseHTTPRequestHandler):
             usage = clean_usage({**(body.get("usage") or {}), "name": name, "week": week})
             if isinstance(usage, str):
                 errors.append({"usage": True, "error": usage})
+            retro = re.sub(r"\s+", " ", str(body.get("retro") or "")).strip()[:500]
+            if not retro:
+                errors.append({"retro": True, "error": "Say where Claude could have helped this week, or write \"Nothing this week\"."})
             cur_use = next((r for r in DATA["usage"] if r["name"] == name and r["week"] == week), None)
             shot = cur_use.get("screenshot") if cur_use else None
             if not errors and not (body.get("usage") or {}).get("screenshot") and not shot:
@@ -662,6 +664,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(400, {"error": "That screenshot couldn't be read. Upload a PNG or JPG image.",
                                                 "errors": [{"usage": True, "error": "That screenshot couldn't be read."}]})
             usage["screenshot"] = shot
+            usage["retro"] = retro
 
             # projects: replace this person's week with what was sent
             stamp = now()
