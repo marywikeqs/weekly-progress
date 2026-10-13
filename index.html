@@ -30,6 +30,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .money{position:relative}.money span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}.money input{padding-left:24px}
 .bullet{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}.bullet b{color:var(--muted);padding-top:9px;width:12px}
 .bullet textarea{min-height:44px;overflow:hidden}
+.more{background:none;border:0;font:inherit;font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;padding:0 0 4px 20px}
 .seg{display:flex;gap:8px}.seg label{flex:1;margin:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .seg input{width:auto;margin:0}.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
 .seg.invalid label{border-color:var(--red)}
@@ -254,9 +255,11 @@ function addCard(u = {}) {
       <div><label for="t${id}">Project type</label><select id="t${id}" class="f-type">${options([{value: 'Claude', label: 'Claude project'}, {value: 'Non-Claude', label: 'Non-Claude project'}], 'Choose')}</select></div>
     </div>
     <span class="lbl">Progress this week</span>
-    ${[0, 1, 2].map(i => `<div class="bullet"><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Optional' : 'What moved this week'}"></textarea></div>`).join('')}
+    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Another line' : 'What moved this week'}"></textarea></div>`).join('')}
+    <button type="button" class="more">+ Add a line</button>
     <span class="lbl">Next steps</span>
-    ${[0, 1, 2].map(i => `<div class="bullet"><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Optional' : 'What\'s next'}"></textarea></div>`).join('')}
+    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Another line' : 'What\'s next'}"></textarea></div>`).join('')}
+    <button type="button" class="more">+ Add a line</button>
     <div class="help" hidden><label for="c${id}">Anything Claude could have helped with? <span class="opt">(optional)</span></label>
       <input id="c${id}" class="f-help" maxlength="300" placeholder="A step that could have been faster with Claude"></div>
     <div class="card-err" hidden></div>`;
@@ -281,7 +284,17 @@ function addCard(u = {}) {
     sync();
   };
   q('.f-type').onchange = sync;
-  el.querySelectorAll('.f-b, .f-n').forEach(t => { const grow = () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }; t.addEventListener('input', grow); requestAnimationFrame(grow); });
+  const grow = t => { if (t.offsetParent) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; } };
+  el.querySelectorAll('.f-b, .f-n').forEach(t => { t.addEventListener('input', () => grow(t)); requestAnimationFrame(() => grow(t)); });
+  // lines 2 and 3 stay tucked away behind "+ Add a line" until used
+  el.querySelectorAll('.more').forEach(btn => {
+    const lines = [];
+    for (let b = btn.previousElementSibling; b && b.classList.contains('bullet'); b = b.previousElementSibling) lines.unshift(b);
+    lines.forEach((b, i) => { if (i && b.querySelector('textarea').value) b.hidden = false; });
+    const fit = () => { btn.hidden = lines.every(b => !b.hidden); };
+    btn.onclick = () => { const b = lines.find(b => b.hidden); b.hidden = false; const t = b.querySelector('textarea'); grow(t); t.focus(); fit(); };
+    fit();
+  });
   q('.remove').onclick = () => { el.remove(); renumber(); };
   const clear = () => { el.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid')); q('.card-err').hidden = true; };
   el.addEventListener('input', clear);
