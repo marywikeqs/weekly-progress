@@ -1,0 +1,605 @@
+"""
+server.py — Weekly Progress.
+
+The team's weekly check-in: a Project Update form (one per project per person
+per week), a Weekly Usage form (one per person per week, with a screenshot of
+their Claude usage), and the CRO's weekly report built from both. Standard
+library only, same shape as the RevOps Answer Book and the Commission Planner:
+Basic Auth, data on a Railway volume.
+
+Where things live:
+  * the app         — index.html (the forms), admin.html, report.py; from the
+                      repo, deploys with every push.
+  * the settings    — STATE_DIR/config.json: roster, project list, screenshot
+                      instructions. Seeded from data/seed_config.json the first
+                      time the app starts with an empty volume, then edited on
+                      the admin page only.
+  * the submissions — STATE_DIR/updates.json and usage.json, plus
+                      STATE_DIR/screenshots/. STATE_DIR/changes.jsonl keeps one
+                      line per save or delete so nothing is lost.
+
+Who sees what:
+  * team  (APP_USER / APP_PASSWORD)   — the two forms.
+  * admin (ADMIN_USER / ADMIN_PASSWORD) — everything: the forms, the admin
+    page, the report, screenshots and the CSV exports.
+  With neither password set (running locally) everything is open.
+
+Environment:
+  PORT            listen port                       (Railway sets this)
+  APP_USER        team username                     default "team"
+  APP_PASSWORD    team password                     unset = forms are open
+  ADMIN_USER      admin username                    default "admin"
+  ADMIN_PASSWORD  admin password                    unset = admin pages are
+                                                    open only when APP_PASSWORD
+                                                    is unset too
+  STATE_DIR       where submissions are written     default the Railway volume,
+                                                    else ./state
+  APP_UID/APP_GID who to run as after claiming a root-owned volume
+
+Run locally:  python server.py   (then http://localhost:8080)
+"""
+
+from __future__ import annotations
+
+import base64
+import csv
+import hmac
+import io
+import json
+import os
+import re
+import secrets
+import sys
+import threading
+from datetime import date, datetime, timedelta, timezone
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+import report
+
+APP_ROOT = Path(__file__).resolve().parent
+PORT = int(os.environ.get("PORT", "8080"))
+HOST = os.environ.get("HOST", "0.0.0.0")
+APP_USER = os.environ.get("APP_USER", "team")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+STATE_DIR = Path(
+    os.environ.get("STATE_DIR")
+    or os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+    or (APP_ROOT / "state")
+).resolve()
+SHOTS = STATE_DIR / "screenshots"
+LOG = STATE_DIR / "changes.jsonl"
+SEED = APP_ROOT / "data" / "seed_config.json"
+APP_UID = int(os.environ.get("APP_UID", "10001"))
+APP_GID = int(os.environ.get("APP_GID", os.environ.get("APP_UID", "10001")))
+
+MAX_BODY = 256 * 1024
+MAX_SHOT = 8 * 1024 * 1024          # the page shrinks big screenshots before sending
+ID_RX = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+SHOT_RX = re.compile(r"^[a-f0-9]{20}\.(png|jpg|webp)$")
+LOCK = threading.Lock()
+
+STATUSES = ["Not started", "In progress", "On track", "At risk", "Blocked", "Completed"]
+TYPES = ["Claude", "Non-Claude"]
+TIME_SAVED = list(report.TIME_SAVED_HOURS)
+REQUEST_STATUSES = ["Approved", "Pending", "Denied"]
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# ---------------- data on disk ----------------
+
+# Everything lives in memory once loaded; the disk copy is what survives a
+# restart. If STATE_DIR can't be written the app still serves, and /healthz
+# and the pages say saves fail, instead of crash-looping on deploy.
+DATA: dict = {}
+WRITABLE = True
+
+
+def _read(name: str, default):
+    p = STATE_DIR / name
+    try:
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"could not read {p}: {exc}\n")
+    return default
+
+
+def load() -> None:
+    cfg = _read("config.json", None)
+    if cfg is None:
+        cfg = json.loads(SEED.read_text(encoding="utf-8"))
+        DATA["config"] = cfg
+        write("config")
+    DATA["config"] = cfg
+    DATA["updates"] = _read("updates.json", [])
+    DATA["usage"] = _read("usage.json", [])
+
+
+def write(key: str) -> bool:
+    global WRITABLE
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        target = STATE_DIR / f"{key}.json"
+        tmp = target.with_suffix(".tmp")
+        tmp.write_text(json.dumps(DATA[key], ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, target)
+        WRITABLE = True
+    except OSError as exc:
+        WRITABLE = False
+        sys.stderr.write(f"could not save {key}: {exc}\n")
+    return WRITABLE
+
+
+def log_change(action: str, kind: str, before, after) -> None:
+    try:
+        with LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"at": now(), "action": action, "kind": kind,
+                                "before": before, "after": after}, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        sys.stderr.write(f"could not append to {LOG}: {exc}\n")
+
+
+# ---------------- validation ----------------
+
+def is_friday(s) -> bool:
+    try:
+        d = date.fromisoformat(str(s))
+    except ValueError:
+        return False
+    return d.weekday() == 4 and abs((d - date.today()).days) <= 400
+
+
+def money(v) -> float | None:
+    try:
+        n = round(float(str(v).replace(",", "").replace("$", "").strip()), 2)
+    except ValueError:
+        return None
+    return n if 0 <= n < 1e7 else None
+
+
+def roster_names() -> set:
+    return {p["name"] for p in DATA["config"]["roster"]}
+
+
+def project_choices() -> list:
+    """The project dropdown: the admin list plus every project anyone has
+    submitted, so a project typed in once is pickable from then on. An admin
+    entry sets the default type, and unticking Active hides a project."""
+    out = {p["name"].lower(): dict(p) for p in DATA["config"]["projects"]}
+    for u in sorted(DATA["updates"], key=lambda u: u.get("updatedAt", "")):
+        c = out.setdefault(u["project"].lower(), {"name": u["project"], "type": "", "active": True, "learned": True})
+        if c.get("learned"):
+            c["type"] = u["type"]          # most recent submission's type
+    return sorted(out.values(), key=lambda p: p["name"].lower())
+
+
+def clean_update(d: dict) -> dict | str:
+    name = str(d.get("name", "")).strip()
+    if name not in roster_names():
+        return "Pick your name."
+    if not is_friday(d.get("week")):
+        return "Pick the week ending date."
+    project = re.sub(r"\s+", " ", str(d.get("project", ""))).strip()[:120]
+    if not project:
+        return "Pick a project, or choose New project and type its name."
+    known = {p["name"].lower(): p["name"] for p in project_choices()}
+    project = known.get(project.lower(), project)
+    ptype = d.get("type")
+    if ptype not in TYPES:
+        return "Pick a project type."
+    status = d.get("status")
+    if status not in STATUSES:
+        return "Pick a status."
+    bullets = [re.sub(r"\s+", " ", str(b)).strip()[:500] for b in (d.get("progress") or [])]
+    bullets = [b for b in bullets if b][:3]
+    if not bullets:
+        return "Add at least one line of progress and next steps."
+    out = {"name": name, "week": d["week"], "project": project,
+           "type": ptype, "status": status, "progress": bullets,
+           "timeSaved": None, "couldHelp": ""}
+    if ptype == "Claude":
+        if d.get("timeSaved") not in TIME_SAVED:
+            return "Pick how much time Claude saved this week."
+        out["timeSaved"] = d["timeSaved"]
+    else:
+        out["couldHelp"] = re.sub(r"\s+", " ", str(d.get("couldHelp", ""))).strip()[:300]
+    return out
+
+
+def clean_usage(d: dict) -> dict | str:
+    name = str(d.get("name", "")).strip()
+    if name not in roster_names():
+        return "Pick your name."
+    if not is_friday(d.get("week")):
+        return "Pick the week ending date."
+    spend, budget = money(d.get("spend")), money(d.get("budget"))
+    if spend is None:
+        return "Enter your spend so far this month."
+    if budget is None or budget <= 0:
+        return "Enter your current monthly budget."
+    if d.get("increaseRequested") not in (True, False):
+        return "Say whether you requested a budget increase this week."
+    out = {"name": name, "week": d["week"], "spend": spend, "budget": budget,
+           "increaseRequested": d["increaseRequested"], "increase": None}
+    if d["increaseRequested"]:
+        inc = d.get("increase") or {}
+        amount = money(inc.get("amount"))
+        reason = re.sub(r"\s+", " ", str(inc.get("reason", ""))).strip()[:300]
+        if amount is None or amount <= 0:
+            return "Enter the new budget amount you requested."
+        if not reason:
+            return "Enter the reason for the increase."
+        if inc.get("status") not in REQUEST_STATUSES:
+            return "Pick the request status."
+        out["increase"] = {"amount": amount, "reason": reason, "status": inc["status"]}
+    return out
+
+
+def save_shot(shot) -> str | None:
+    """A data: URL from the page -> a file name under screenshots/, or None."""
+    m = re.fullmatch(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)", str(shot or ""))
+    if not m:
+        return None
+    try:
+        raw = base64.b64decode(m.group(2), validate=False)
+    except ValueError:
+        return None
+    ext = {"png": "png", "jpeg": "jpg", "webp": "webp"}[m.group(1)]
+    magic = {"png": raw[:8] == b"\x89PNG\r\n\x1a\n", "jpg": raw[:3] == b"\xff\xd8\xff",
+             "webp": raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"}[ext]
+    if not magic or not raw or len(raw) > MAX_SHOT:
+        return None
+    fname = f"{secrets.token_hex(10)}.{ext}"
+    try:
+        SHOTS.mkdir(parents=True, exist_ok=True)
+        (SHOTS / fname).write_bytes(raw)
+    except OSError as exc:
+        sys.stderr.write(f"could not save screenshot: {exc}\n")
+        return None
+    return fname
+
+
+def clean_config(d: dict) -> dict | str:
+    roster, seen = [], set()
+    for p in d.get("roster") or []:
+        n = re.sub(r"\s+", " ", str(p.get("name", ""))).strip()[:80]
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            roster.append({"name": n, "active": bool(p.get("active", True))})
+    projects, seen = [], set()
+    for p in d.get("projects") or []:
+        n = re.sub(r"\s+", " ", str(p.get("name", ""))).strip()[:120]
+        if n and n.lower() not in seen and n.lower() != "other":
+            seen.add(n.lower())
+            projects.append({"name": n, "type": p.get("type") if p.get("type") in TYPES else "",
+                             "active": bool(p.get("active", True))})
+    instructions = str(d.get("screenshotInstructions", "")).strip()[:2000]
+    if not roster:
+        return "The roster needs at least one name."
+    return {"roster": roster, "projects": projects, "screenshotInstructions": instructions}
+
+
+# ---------------- exports ----------------
+
+def to_csv(rows: list, cols: list) -> bytes:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([c[0] for c in cols])
+    for r in rows:
+        w.writerow([c[1](r) for c in cols])
+    return ("﻿" + buf.getvalue()).encode("utf-8")  # BOM so Excel reads UTF-8
+
+
+UPDATE_COLS = [
+    ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]),
+    ("Project", lambda r: r["project"]),
+    ("Type", lambda r: r["type"]), ("Status", lambda r: r["status"]),
+    ("Progress and next steps", lambda r: "\n".join("• " + b for b in r["progress"])),
+    ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
+    ("Time saved (hrs, midpoint)", lambda r: report.hours(r) if r["type"] == "Claude" else ""),
+    ("Claude could have helped", lambda r: r.get("couldHelp", "")),
+    ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
+]
+USAGE_COLS = [
+    ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]),
+    ("Spend this month", lambda r: r["spend"]), ("Monthly budget", lambda r: r["budget"]),
+    ("% of budget", lambda r: round(100 * r["spend"] / r["budget"], 1) if r["budget"] else ""),
+    ("Requested increase", lambda r: "Yes" if r["increaseRequested"] else "No"),
+    ("Requested budget", lambda r: (r.get("increase") or {}).get("amount", "")),
+    ("Reason", lambda r: (r.get("increase") or {}).get("reason", "")),
+    ("Request status", lambda r: (r.get("increase") or {}).get("status", "")),
+    ("Screenshot", lambda r: f"/screenshots/{r['screenshot']}" if r.get("screenshot") else ""),
+    ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
+]
+
+
+# ---------------- volume plumbing (as in the Answer Book) ----------------
+
+def claim_state_dir() -> None:
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        for root, dirs, files in os.walk(STATE_DIR):
+            os.chown(root, APP_UID, APP_GID)
+            for f in files:
+                os.chown(os.path.join(root, f), APP_UID, APP_GID)
+    except OSError as exc:
+        sys.stderr.write(f"could not take ownership of {STATE_DIR}: {exc}\n")
+    try:
+        os.setgroups([])
+        os.setgid(APP_GID)
+        os.setuid(APP_UID)
+    except OSError as exc:
+        sys.stderr.write(f"WARNING: still running as root: {exc}\n")
+
+
+def state_persistent() -> bool:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        return os.stat(STATE_DIR).st_dev != os.stat(APP_ROOT).st_dev
+    except OSError:
+        return False
+
+
+# ---------------- HTTP ----------------
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "WeeklyProgress"
+    sys_version = ""
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+
+    def send_body(self, code, body: bytes, ctype: str, extra: dict | None = None):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_json(self, code, obj):
+        self.send_body(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+
+    def role(self) -> str | None:
+        """'admin', 'team', or None. Admin passes every team gate too."""
+        if not APP_PASSWORD and not ADMIN_PASSWORD:
+            return "admin"
+        h = self.headers.get("Authorization", "")
+        user = pw = ""
+        if h.startswith("Basic "):
+            try:
+                user, _, pw = base64.b64decode(h[6:]).decode("utf-8").partition(":")
+            except Exception:
+                pass
+        if ADMIN_PASSWORD and hmac.compare_digest(user, ADMIN_USER) & hmac.compare_digest(pw, ADMIN_PASSWORD):
+            return "admin"
+        if not APP_PASSWORD or (hmac.compare_digest(user, APP_USER) & hmac.compare_digest(pw, APP_PASSWORD)):
+            return "team"
+        return None
+
+    def gate(self, need: str) -> bool:
+        r = self.role()
+        if r == "admin" or (need == "team" and r == "team"):
+            return True
+        realm = "Weekly Progress admin" if need == "admin" else "Weekly Progress"
+        self.send_body(HTTPStatus.UNAUTHORIZED, b"Sign in required.", "text/plain; charset=utf-8",
+                       {"WWW-Authenticate": f'Basic realm="{realm}"'})
+        return False
+
+    def read_json(self, limit=MAX_BODY):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > limit:
+            return None
+        try:
+            return json.loads(self.rfile.read(n))
+        except ValueError:
+            return None
+
+    def page(self, name: str):
+        self.send_body(200, (APP_ROOT / name).read_bytes(), "text/html; charset=utf-8")
+
+    def base_url(self) -> str:
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or f"localhost:{PORT}"
+        proto = self.headers.get("X-Forwarded-Proto") or "http"   # Railway sets it to https
+        return f"{proto}://{host}"
+
+    # GET ------------------------------------------------------------
+    def do_GET(self):
+        url = urlsplit(self.path)
+        path, q = url.path, {k: v[0] for k, v in parse_qs(url.query).items()}
+        if path == "/healthz":
+            return self.send_json(200, {"ok": True, "persistent": state_persistent(), "writable": WRITABLE,
+                                        "teamAuth": bool(APP_PASSWORD), "adminAuth": bool(ADMIN_PASSWORD)})
+        if path in ("/", "/index.html"):
+            return self.gate("team") and self.page("index.html")
+        if path == "/api/config":
+            if not self.gate("team"):
+                return
+            cfg = DATA["config"]
+            return self.send_json(200, {
+                "roster": [p["name"] for p in cfg["roster"] if p["active"]],
+                "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
+                "screenshotInstructions": cfg.get("screenshotInstructions", ""),
+                "statuses": STATUSES, "timeSaved": TIME_SAVED, "requestStatuses": REQUEST_STATUSES,
+                "writable": WRITABLE, "persistent": state_persistent(),
+            })
+        if path == "/api/mine":
+            if not self.gate("team"):
+                return
+            name, week = q.get("name", ""), q.get("week", "")
+            with LOCK:
+                ups = [u for u in DATA["updates"] if u["name"] == name and u["week"] == week]
+                use = next((u for u in DATA["usage"] if u["name"] == name and u["week"] == week), None)
+                earlier = sorted((u for u in DATA["usage"] if u["name"] == name and u["week"] < week), key=lambda u: u["week"])
+            # Last week's budget pre-fills this week's; budgets rarely change.
+            return self.send_json(200, {"updates": ups, "usage": use,
+                                        "lastBudget": earlier[-1]["budget"] if earlier else None})
+
+        # admin only from here
+        if path in ("/admin", "/admin.html"):
+            return self.gate("admin") and self.page("admin.html")
+        if path == "/api/admin":
+            if not self.gate("admin"):
+                return
+            with LOCK:
+                listed = {p["name"].lower() for p in DATA["config"]["projects"]}
+                learned = {}
+                for u in DATA["updates"]:
+                    if u["project"].lower() not in listed:
+                        o = learned.setdefault(u["project"].lower(), {"name": u["project"], "type": u["type"], "count": 0, "last": ""})
+                        o["count"] += 1
+                        o["last"] = max(o["last"], u["week"])
+                return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()),
+                                            "weeks": report.weeks_with_data(DATA), "writable": WRITABLE, "persistent": state_persistent()})
+        if path in ("/report", "/report.txt"):
+            if not self.gate("admin"):
+                return
+            with LOCK:
+                week = q.get("week") if is_friday(q.get("week")) else report.default_week(DATA)
+                r = report.build(DATA, week)
+            if path == "/report.txt":
+                return self.send_body(200, report.render_text(r, self.base_url()).encode("utf-8"), "text/plain; charset=utf-8")
+            return self.send_body(200, report.render_html(r, report.weeks_with_data(DATA, week)).encode("utf-8"), "text/html; charset=utf-8")
+        m = re.fullmatch(r"/screenshots/([^/]+)", path)
+        if m:
+            if not self.gate("admin"):
+                return
+            if not SHOT_RX.match(m.group(1)) or not (SHOTS / m.group(1)).is_file():
+                return self.send_json(404, {"error": "Not found"})
+            ext = m.group(1).rsplit(".", 1)[1]
+            ctype = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}[ext]
+            return self.send_body(200, (SHOTS / m.group(1)).read_bytes(), ctype, {"Cache-Control": "private, max-age=86400"})
+        m = re.fullmatch(r"/export/(updates|usage)\.csv", path)
+        if m:
+            if not self.gate("admin"):
+                return
+            with LOCK:
+                rows = [r for r in DATA[m.group(1)] if not q.get("week") or r["week"] == q["week"]]
+            rows.sort(key=lambda r: (r["week"], r["name"], r.get("project", "")))
+            body = to_csv(rows, UPDATE_COLS if m.group(1) == "updates" else USAGE_COLS)
+            fname = f"weekly-{'projects' if m.group(1) == 'updates' else 'usage'}{'-' + q['week'] if q.get('week') else ''}.csv"
+            return self.send_body(200, body, "text/csv; charset=utf-8", {"Content-Disposition": f'attachment; filename="{fname}"'})
+        self.send_json(404, {"error": "Not found"})
+
+    # writes -----------------------------------------------------------
+    def unsaved(self):
+        return self.send_json(503, {"error": "The server couldn't save that. Its storage isn't writable."})
+
+    def do_POST(self):
+        path = urlsplit(self.path).path
+        if path == "/api/updates":
+            if not self.gate("team"):
+                return
+            body = self.read_json() or {}
+            with LOCK:
+                u = clean_update(body)
+                if isinstance(u, str):
+                    return self.send_json(400, {"error": u})
+                rows = DATA["updates"]
+                key = (u["name"], u["week"], u["project"].lower())
+                cur = next((r for r in rows if r["id"] == body.get("id")), None) if body.get("id") else None
+                clash = next((r for r in rows if (r["name"], r["week"], r["project"].lower()) == key and r is not cur), None)
+                if cur is None:
+                    cur = clash          # same project resubmitted: replace it
+                elif clash is not None:
+                    return self.send_json(409, {"error": f"You already have an update for {u['project']} this week. Edit that one instead."})
+                before = dict(cur) if cur else None
+                if cur:
+                    cur.update(u, updatedAt=now())
+                    rec = cur
+                else:
+                    rec = {"id": "u-" + secrets.token_hex(5), **u, "submittedAt": now(), "updatedAt": now()}
+                    rows.append(rec)
+                if not write("updates"):
+                    return self.unsaved()
+                log_change("update" if before else "create", "project", before, rec)
+            return self.send_json(200 if before else 201, {"update": rec, "replaced": bool(before)})
+        if path == "/api/usage":
+            if not self.gate("team"):
+                return
+            body = self.read_json(MAX_SHOT * 4 // 3 + MAX_BODY) or {}
+            with LOCK:
+                u = clean_usage(body)
+                if isinstance(u, str):
+                    return self.send_json(400, {"error": u})
+                cur = next((r for r in DATA["usage"] if r["name"] == u["name"] and r["week"] == u["week"]), None)
+                shot = cur.get("screenshot") if cur else None
+                if body.get("screenshot"):
+                    shot = save_shot(body["screenshot"])
+                    if not shot:
+                        return self.send_json(400, {"error": "That screenshot couldn't be read. Upload a PNG or JPG image."})
+                if not shot:
+                    return self.send_json(400, {"error": "Attach your usage screenshot."})
+                u["screenshot"] = shot
+                before = dict(cur) if cur else None
+                if cur:
+                    cur.update(u, updatedAt=now())
+                    rec = cur
+                else:
+                    rec = {"id": "s-" + secrets.token_hex(5), **u, "submittedAt": now(), "updatedAt": now()}
+                    DATA["usage"].append(rec)
+                if not write("usage"):
+                    return self.unsaved()
+                log_change("update" if before else "create", "usage", before, rec)
+            return self.send_json(200 if before else 201, {"usage": rec, "replaced": bool(before)})
+        self.send_json(404, {"error": "Not found"})
+
+    def do_PUT(self):
+        if urlsplit(self.path).path != "/api/admin/config":
+            return self.send_json(404, {"error": "Not found"})
+        if not self.gate("admin"):
+            return
+        body = self.read_json() or {}
+        with LOCK:
+            cfg = clean_config(body)
+            if isinstance(cfg, str):
+                return self.send_json(400, {"error": cfg})
+            before = DATA["config"]
+            DATA["config"] = cfg
+            if not write("config"):
+                DATA["config"] = before
+                return self.unsaved()
+            log_change("update", "config", before, cfg)
+        self.send_json(200, {"config": cfg})
+
+    def do_DELETE(self):
+        m = re.fullmatch(r"/api/updates/([^/]+)", urlsplit(self.path).path)
+        if not m or not ID_RX.match(m.group(1)):
+            return self.send_json(404, {"error": "Not found"})
+        if not self.gate("team"):
+            return
+        with LOCK:
+            cur = next((r for r in DATA["updates"] if r["id"] == m.group(1)), None)
+            if cur:
+                DATA["updates"].remove(cur)
+                if not write("updates"):
+                    DATA["updates"].append(cur)
+                    return self.unsaved()
+                log_change("delete", "project", cur, None)
+        self.send_json(200, {"deleted": bool(cur)})
+
+
+def main():
+    claim_state_dir()
+    with LOCK:
+        load()
+    sys.stderr.write(f"data at {STATE_DIR} ({'persistent volume' if state_persistent() else 'container disk — resets on deploy'}); "
+                     f"team auth {'on' if APP_PASSWORD else 'OFF'}, admin auth {'on' if ADMIN_PASSWORD else 'OFF'}\n")
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

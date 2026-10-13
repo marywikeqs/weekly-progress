@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Weekly Progress</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--muted:#5d6676;--line:#d9dde4;--accent:#3b5bdb;--accent-soft:#e8edff;
+--red:#c92a2a;--red-soft:#ffe9e9;--green:#2b8a3e;--green-soft:#e6f6ea;--grey-soft:#eef0f3;--focus:#3b5bdb55;--on-accent:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#12151b;--card:#1b1f27;--ink:#e7eaf0;--muted:#9aa3b2;--line:#323946;
+--accent:#91a7ff;--accent-soft:#232c48;--red:#ff8787;--red-soft:#3a1f22;--green:#8ce99a;--green-soft:#1d3324;--grey-soft:#262b35;--focus:#91a7ff55;--on-accent:#12151b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:0 0 4px}
+.lede{color:var(--muted);margin:0 0 20px;font-size:15px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media (max-width:560px){.row{grid-template-columns:1fr}}
+label{display:block;font-weight:600;font-size:14px;margin:14px 0 5px}label:first-child{margin-top:0}
+label .opt{font-weight:400;color:var(--muted)}
+.hint{font-size:13px;color:var(--muted);margin:-2px 0 6px}
+input,select,textarea{width:100%;font:inherit;font-size:16px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+textarea{resize:vertical;min-height:44px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus)}
+.money{position:relative}.money span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}.money input{padding-left:24px}
+.bullet{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}.bullet b{color:var(--muted);padding-top:9px;width:12px}
+.seg{display:flex;gap:8px}.seg label{flex:1;margin:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.seg input{width:auto;margin:0}.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.tabs{display:flex;gap:4px;background:var(--grey-soft);padding:4px;border-radius:10px;margin-bottom:16px}
+.tabs button{flex:1;border:0;background:none;padding:9px;border-radius:7px;font:inherit;font-size:15px;font-weight:600;color:var(--muted);cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px #0002}
+.tabs .tick{color:var(--green)}
+button.primary,button.ghost{font:inherit;font-weight:600;padding:11px 18px;border-radius:8px;cursor:pointer;border:1px solid var(--accent)}
+button.primary{background:var(--accent);color:var(--on-accent)}button.ghost{background:none;color:var(--accent)}
+button:disabled{opacity:.6;cursor:default}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;align-items:center}
+.msg{padding:10px 12px;border-radius:8px;font-size:14px;margin-top:14px;display:none}
+.msg.err{display:block;background:var(--red-soft);color:var(--red)}.msg.ok{display:block;background:var(--green-soft);color:var(--green)}
+.sent{list-style:none;padding:0;margin:8px 0 0}.sent li{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.sent li:first-child{border-top:0}.sent .grow{flex:1;min-width:0}.sent .sub{color:var(--muted);font-size:13px}
+.link{background:none;border:0;color:var(--accent);font:inherit;font-size:14px;cursor:pointer;padding:4px}
+.link.danger{color:var(--red)}
+.instructions{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-line;margin-bottom:8px}
+.preview{margin-top:8px;max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;display:none}
+.empty{color:var(--muted);font-size:14px;margin:6px 0 0}
+[hidden]{display:none!important}
+.banner{background:var(--red-soft);color:var(--red);padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Weekly Progress</h1>
+  <p class="lede">Your weekly check-in: one update per project you worked on, plus your Claude usage. About 5 minutes.</p>
+  <div id="banner" class="banner" hidden></div>
+
+  <div class="card">
+    <div class="row">
+      <div><label for="name">Name</label><select id="name"><option value="">Choose your name</option></select></div>
+      <div><label for="week">Week ending</label><select id="week"></select></div>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-proj" aria-selected="true" aria-controls="pane-proj">Project updates <span id="proj-count"></span></button>
+    <button role="tab" id="tab-use" aria-selected="false" aria-controls="pane-use">Weekly usage <span id="use-tick"></span></button>
+  </div>
+
+  <!-- Project updates -->
+  <div id="pane-proj" role="tabpanel">
+    <div class="card" id="sent-card" hidden>
+      <h2>Sent for this week</h2>
+      <ul class="sent" id="sent"></ul>
+    </div>
+    <form class="card" id="proj-form" novalidate>
+      <h2 id="proj-title">Add a project update</h2>
+      <div id="pick-wrap"><label for="project">Project</label>
+      <p class="hint">Projects anyone has reported before are listed. Choose New project for anything else.</p>
+      <select id="project"></select></div>
+      <div id="other-wrap" hidden><label for="other">New project name</label>
+        <p class="hint">Keep it short and use the same name every week, so the report can follow it week to week.</p>
+        <input id="other" maxlength="120" placeholder="e.g. Commission Audit Tool"></div>
+      <div class="row">
+        <div><label for="ptype">Project type</label>
+          <select id="ptype"><option value="">Choose</option><option value="Claude">Claude project</option><option value="Non-Claude">Non-Claude project</option></select></div>
+        <div><label for="status">Status</label><select id="status"></select></div>
+      </div>
+      <label>Progress and next steps</label>
+      <p class="hint">One to three short bullets: what moved this week and what's next.</p>
+      <div class="bullet"><b>•</b><textarea id="b1" rows="2" maxlength="500"></textarea></div>
+      <div class="bullet"><b>•</b><textarea id="b2" rows="2" maxlength="500" placeholder="Optional"></textarea></div>
+      <div class="bullet"><b>•</b><textarea id="b3" rows="2" maxlength="500" placeholder="Optional"></textarea></div>
+      <div id="saved-wrap" hidden><label for="saved">Time saved with Claude this week</label><select id="saved"></select></div>
+      <div id="help-wrap" hidden><label for="help">Anything Claude could have helped with? <span class="opt">(optional)</span></label>
+        <input id="help" maxlength="300" placeholder="A step that could have been faster with Claude"></div>
+      <div class="actions">
+        <button class="primary" type="submit" id="proj-save">Save update</button>
+        <button class="ghost" type="button" id="proj-cancel" hidden>Cancel edit</button>
+      </div>
+      <div class="msg" id="proj-msg" role="status"></div>
+    </form>
+  </div>
+
+  <!-- Weekly usage -->
+  <div id="pane-use" role="tabpanel" hidden>
+    <form class="card" id="use-form" novalidate>
+      <h2>Claude usage this week</h2>
+      <p class="hint" id="use-state"></p>
+      <div class="row">
+        <div><label for="spend">Spend used so far this month</label><div class="money"><span>$</span><input id="spend" inputmode="decimal" placeholder="0.00"></div></div>
+        <div><label for="budget">Current monthly budget</label><div class="money"><span>$</span><input id="budget" inputmode="decimal" placeholder="0.00"></div></div>
+      </div>
+      <label>Did you request a budget increase this week?</label>
+      <div class="seg"><label><input type="radio" name="inc" value="no"> No</label><label><input type="radio" name="inc" value="yes"> Yes</label></div>
+      <div id="inc-wrap" hidden>
+        <div class="row">
+          <div><label for="inc-amount">New budget requested</label><div class="money"><span>$</span><input id="inc-amount" inputmode="decimal"></div></div>
+          <div><label for="inc-status">Request status</label><select id="inc-status"></select></div>
+        </div>
+        <label for="inc-reason">Reason for the increase</label><input id="inc-reason" maxlength="300">
+      </div>
+      <label for="shot">Usage screenshot</label>
+      <div class="instructions" id="shot-howto"></div>
+      <input type="file" id="shot" accept="image/*">
+      <p class="hint" id="shot-state"></p>
+      <img class="preview" id="shot-preview" alt="Screenshot preview">
+      <div class="actions"><button class="primary" type="submit" id="use-save">Save usage</button></div>
+      <div class="msg" id="use-msg" role="status"></div>
+    </form>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let CFG = null, MINE = {updates: [], usage: null, lastBudget: null}, editing = null, shotData = null;
+
+// ---- weeks: this Friday Mon–Fri, last Friday on the weekend ----
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function currentFriday() {
+  const d = new Date(); d.setHours(12, 0, 0, 0);
+  const wd = d.getDay();                      // Sun 0 … Sat 6
+  d.setDate(d.getDate() + (wd === 6 ? -1 : wd === 0 ? -2 : 5 - wd));
+  return d;
+}
+function weekLabel(d) { return d.toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'}); }
+
+function store(k, v) { try { v === undefined ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
+function recall(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...opts});
+  let body = {};
+  try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(body.error || `The server said ${r.status}.`);
+  return body;
+}
+function opt(sel, items, first) {
+  sel.innerHTML = (first ? `<option value="">${first}</option>` : '') +
+    items.map(i => typeof i === 'string' ? `<option>${esc(i)}</option>` : `<option value="${esc(i.value)}">${esc(i.label)}</option>`).join('');
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+function msg(el, text, ok) { el.textContent = text; el.className = 'msg ' + (text ? (ok ? 'ok' : 'err') : ''); }
+const money = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
+const num = v => { const n = parseFloat(String(v).replace(/[$,\s]/g, '')); return isNaN(n) ? null : n; };
+
+// ---- setup ----
+async function init() {
+  try { CFG = await api('/api/config'); }
+  catch (e) { $('banner').textContent = 'Couldn\'t load the form: ' + e.message; $('banner').hidden = false; return; }
+  if (!CFG.writable) { $('banner').textContent = 'The server can\'t save right now. Submissions will fail until an admin fixes its storage.'; $('banner').hidden = false; }
+
+  opt($('name'), CFG.roster, 'Choose your name');
+  const me = recall('wp-name');
+  if (me && CFG.roster.includes(me)) $('name').value = me;
+
+  const f = currentFriday(), weeks = [];
+  for (let i = 0; i < 6; i++) { const d = new Date(f); d.setDate(f.getDate() - 7 * i); weeks.push({value: iso(d), label: weekLabel(d) + (i === 0 ? ' (this week)' : '')}); }
+  opt($('week'), weeks);
+
+  fillProjects();
+  opt($('status'), CFG.statuses, 'Choose');
+  opt($('saved'), CFG.timeSaved, 'Choose');
+  opt($('inc-status'), CFG.requestStatuses, 'Choose');
+  $('shot-howto').textContent = CFG.screenshotInstructions || 'Capture your Claude usage screen for this month so far.';
+
+  $('name').onchange = () => { store('wp-name', $('name').value || undefined); refresh(); };
+  $('week').onchange = refresh;
+  $('tab-proj').onclick = () => tab('proj');
+  $('tab-use').onclick = () => tab('use');
+  $('project').onchange = onProject;
+  $('ptype').onchange = showConditional;
+  $('proj-form').onsubmit = saveProject;
+  $('proj-cancel').onclick = () => resetProject();
+  document.querySelectorAll('input[name=inc]').forEach(r => r.onchange = () => { $('inc-wrap').hidden = incValue() !== true; });
+  $('shot').onchange = onShot;
+  $('use-form').onsubmit = saveUsage;
+  if (location.hash === '#usage') tab('use');
+  refresh();
+}
+
+// Every project anyone has sent shows here; with none yet, it's just the name box.
+function fillProjects() {
+  opt($('project'), [...CFG.projects.map(p => p.name), {value: '__other', label: 'New project…'}], 'Choose a project');
+  $('pick-wrap').hidden = !CFG.projects.length;
+}
+async function reloadProjects() {
+  try { CFG.projects = (await api('/api/config')).projects; fillProjects(); } catch (e) {}
+}
+
+function tab(which) {
+  $('tab-proj').setAttribute('aria-selected', which === 'proj');
+  $('tab-use').setAttribute('aria-selected', which === 'use');
+  $('pane-proj').hidden = which !== 'proj';
+  $('pane-use').hidden = which !== 'use';
+  history.replaceState(null, '', which === 'use' ? '#usage' : '#');
+}
+
+// ---- what this person has sent this week ----
+async function refresh() {
+  const name = $('name').value, week = $('week').value;
+  MINE = {updates: [], usage: null, lastBudget: null};
+  if (name) {
+    try { MINE = await api(`/api/mine?name=${encodeURIComponent(name)}&week=${week}`); }
+    catch (e) { msg($('proj-msg'), e.message); }
+  }
+  resetProject(true);
+  renderSent();
+  fillUsage();
+}
+
+function renderSent() {
+  const ups = MINE.updates;
+  $('sent-card').hidden = !ups.length;
+  $('proj-count').textContent = ups.length ? `(${ups.length})` : '';
+  $('use-tick').innerHTML = MINE.usage ? '<span class="tick">✓</span>' : '';
+  $('sent').innerHTML = ups.map(u => `<li><div class="grow"><strong>${esc(u.project)}</strong>
+      <div class="sub">${esc(u.status)} · ${u.type === 'Claude' ? 'Claude project' : 'Non-Claude project'}</div></div>
+      <button class="link" data-edit="${u.id}">Edit</button><button class="link danger" data-del="${u.id}">Delete</button></li>`).join('');
+  $('sent').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editProject(b.dataset.edit));
+  $('sent').querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteProject(b.dataset.del));
+}
+
+// ---- project update form ----
+function onProject() {
+  if (!CFG.projects.length) $('project').value = '__other';
+  const v = $('project').value;
+  $('other-wrap').hidden = v !== '__other';
+  const known = CFG.projects.find(p => p.name === v);
+  if (known && known.type) $('ptype').value = known.type;
+  showConditional();
+}
+function showConditional() {
+  const t = $('ptype').value;
+  $('saved-wrap').hidden = t !== 'Claude';
+  $('help-wrap').hidden = t !== 'Non-Claude';
+}
+function resetProject(keepMsg) {
+  editing = null;
+  $('proj-form').reset();
+  $('proj-title').textContent = MINE.updates.length ? 'Add another project update' : 'Add a project update';
+  $('proj-save').textContent = 'Save update';
+  $('proj-cancel').hidden = true;
+  onProject();
+  if (!keepMsg) msg($('proj-msg'), '');
+}
+function editProject(id) {
+  const u = MINE.updates.find(x => x.id === id);
+  if (!u) return;
+  editing = id;
+  const known = CFG.projects.some(p => p.name === u.project);
+  $('project').value = known ? u.project : '__other';
+  $('other').value = known ? '' : u.project;
+  $('other-wrap').hidden = known;
+  $('ptype').value = u.type;
+  $('status').value = u.status;
+  ['b1', 'b2', 'b3'].forEach((b, i) => $(b).value = u.progress[i] || '');
+  $('saved').value = u.timeSaved || '';
+  $('help').value = u.couldHelp || '';
+  showConditional();
+  $('proj-title').textContent = 'Edit: ' + u.project;
+  $('proj-save').textContent = 'Save changes';
+  $('proj-cancel').hidden = false;
+  msg($('proj-msg'), '');
+  $('proj-form').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+async function saveProject(ev) {
+  ev.preventDefault();
+  const name = $('name').value;
+  if (!name) return msg($('proj-msg'), 'Choose your name first (top of the page).');
+  const project = $('project').value === '__other' ? $('other').value.trim() : $('project').value;
+  const body = {
+    id: editing, name, week: $('week').value, project, type: $('ptype').value, status: $('status').value,
+    progress: ['b1', 'b2', 'b3'].map(b => $(b).value.trim()).filter(Boolean),
+    timeSaved: $('saved').value, couldHelp: $('help').value.trim(),
+  };
+  const btn = $('proj-save'); btn.disabled = true;
+  try {
+    const r = await api('/api/updates', {method: 'POST', body: JSON.stringify(body)});
+    MINE = await api(`/api/mine?name=${encodeURIComponent(name)}&week=${body.week}`);
+    if (!CFG.projects.some(p => p.name.toLowerCase() === r.update.project.toLowerCase())) await reloadProjects();
+    resetProject();
+    renderSent();
+    msg($('proj-msg'), `Saved ${r.update.project}${r.replaced && !body.id ? ' (replaced your earlier update for it)' : ''}. Add another project, or switch to Weekly usage.`, true);
+  } catch (e) { msg($('proj-msg'), e.message); }
+  btn.disabled = false;
+}
+async function deleteProject(id) {
+  const u = MINE.updates.find(x => x.id === id);
+  if (!u) return;
+  const li = document.querySelector(`[data-del="${id}"]`).closest('li');
+  if (li.dataset.confirm !== '1') {   // two-click confirm, no browser dialog
+    li.dataset.confirm = '1';
+    li.querySelector('[data-del]').textContent = 'Click again to delete';
+    return;
+  }
+  try {
+    await api('/api/updates/' + id, {method: 'DELETE'});
+    MINE.updates = MINE.updates.filter(x => x.id !== id);
+    if (editing === id) resetProject();
+    renderSent();
+    msg($('proj-msg'), `Deleted ${u.project}.`, true);
+  } catch (e) { msg($('proj-msg'), e.message); }
+}
+
+// ---- usage form ----
+function incValue() { const r = document.querySelector('input[name=inc]:checked'); return r ? r.value === 'yes' : null; }
+function fillUsage() {
+  const u = MINE.usage;
+  shotData = null; $('shot').value = ''; $('shot-preview').style.display = 'none';
+  msg($('use-msg'), '');
+  $('spend').value = u ? u.spend : '';
+  $('budget').value = u ? u.budget : (MINE.lastBudget ?? '');
+  document.querySelectorAll('input[name=inc]').forEach(r => r.checked = u ? (r.value === 'yes') === u.increaseRequested : false);
+  $('inc-wrap').hidden = !(u && u.increaseRequested);
+  $('inc-amount').value = u?.increase?.amount ?? '';
+  $('inc-status').value = u?.increase?.status ?? '';
+  $('inc-reason').value = u?.increase?.reason ?? '';
+  $('use-state').textContent = u ? `Sent ${new Date(u.updatedAt).toLocaleString()}. Change anything below and save again to update it.`
+    : (MINE.lastBudget != null ? 'Budget is pre-filled from your last submission. Change it if it has changed.' : '');
+  $('shot-state').textContent = u ? 'Your screenshot is on file. Upload a new one only to replace it.' : '';
+  $('use-save').textContent = u ? 'Update usage' : 'Save usage';
+}
+
+// Big screenshots are shrunk to a 2000px-wide JPEG before upload.
+async function onShot() {
+  shotData = null;
+  const f = $('shot').files[0];
+  if (!f) return;
+  try {
+    const url = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => bad(r.error); r.readAsDataURL(f); });
+    const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('That file isn\'t an image this browser can read.')); i.src = url; });
+    const okType = /^data:image\/(png|jpeg|webp);/.test(url);
+    if (okType && f.size <= 1.5e6 && img.naturalWidth <= 2400) { shotData = url; }
+    else {
+      const scale = Math.min(1, 2000 / img.naturalWidth);
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      shotData = c.toDataURL('image/jpeg', 0.88);
+    }
+    $('shot-preview').src = shotData; $('shot-preview').style.display = 'block';
+    msg($('use-msg'), '');
+  } catch (e) { msg($('use-msg'), e.message); $('shot').value = ''; }
+}
+async function saveUsage(ev) {
+  ev.preventDefault();
+  const name = $('name').value;
+  if (!name) return msg($('use-msg'), 'Choose your name first (top of the page).');
+  const inc = incValue();
+  const body = {
+    name, week: $('week').value, spend: num($('spend').value), budget: num($('budget').value),
+    increaseRequested: inc, increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
+    screenshot: shotData,
+  };
+  if (!shotData && !MINE.usage) return msg($('use-msg'), 'Attach your usage screenshot.');
+  const btn = $('use-save'); btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await api('/api/usage', {method: 'POST', body: JSON.stringify(body)});
+    MINE.usage = r.usage;
+    fillUsage(); renderSent();
+    const pct = r.usage.budget ? Math.round(100 * r.usage.spend / r.usage.budget) : 0;
+    msg($('use-msg'), `Saved. You've used ${pct}% of your ${money(r.usage.budget)} budget this month.${MINE.updates.length ? ' You\'re done for the week.' : ' Don\'t forget your project updates.'}`, true);
+  } catch (e) { msg($('use-msg'), e.message); btn.textContent = MINE.usage ? 'Update usage' : 'Save usage'; }
+  btn.disabled = false;
+}
+
+init();
+</script>
+</body>
+</html>

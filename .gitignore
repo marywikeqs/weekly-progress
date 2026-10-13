@@ -1,0 +1,5 @@
+# Local submissions and screenshots: real people's spend. Never committed.
+state/
+_test/out/
+__pycache__/
+*.log

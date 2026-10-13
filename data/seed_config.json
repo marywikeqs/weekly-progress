@@ -1,0 +1,9 @@
+{
+  "roster": [
+    {"name": "Cora Gadd", "active": true},
+    {"name": "Dan Hall", "active": true},
+    {"name": "Rylan Smith", "active": true}
+  ],
+  "projects": [],
+  "screenshotInstructions": "Open claude.ai → Settings → Usage. Set the date range to the 1st of this month through today, so the screenshot shows this month's spend so far. Capture the whole panel, including the date range and the total."
+}
