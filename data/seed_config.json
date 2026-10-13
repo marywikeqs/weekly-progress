@@ -2,7 +2,8 @@
   "roster": [
     {"name": "Cora Gadd", "active": true},
     {"name": "Dan Hall", "active": true},
-    {"name": "Rylan Smith", "active": true}
+    {"name": "Rylan Smith", "active": true},
+    {"name": "Mary Wike", "active": true}
   ],
   "projects": [],
   "reportEmail": "mwike@quiltsoftware.com",

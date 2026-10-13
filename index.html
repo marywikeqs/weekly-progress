@@ -23,7 +23,7 @@ label,.lbl{display:block;font-weight:600;font-size:14px;margin:14px 0 5px}
 .opt{font-weight:400;color:var(--muted)}
 .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
 input,select,textarea{width:100%;font:inherit;font-size:16px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
-input[type=date]{min-height:44px}
+input:not([type=radio]):not([type=file]),select{height:44px}
 textarea{resize:vertical;min-height:44px}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--focus)}
 .invalid{border-color:var(--red)!important}
@@ -39,7 +39,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .proj-head h3{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
 .remove{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;cursor:pointer;padding:4px 6px}
 .remove:hover{color:var(--red)}
-.f-new{margin-top:8px}
+.f-pick:not([hidden])+.f-new{margin-top:8px}
 .card-err{color:var(--red);font-size:14px;margin-top:10px}
 .add{width:100%;font:inherit;font-weight:600;padding:12px;border:1.5px dashed var(--line);border-radius:12px;background:none;color:var(--accent);cursor:pointer}
 .add:hover{border-color:var(--accent)}
