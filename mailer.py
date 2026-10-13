@@ -152,7 +152,7 @@ def html(r: dict, note: str = "") -> str:
                  f'<div style="font-size:16px;font-weight:bold;margin-bottom:8px"><span style="display:inline-block;width:26px;height:26px;line-height:26px;'
                  f'text-align:center;border-radius:13px;background:{col};color:#fff;font-size:11px;margin-right:8px">{escape(initials)}</span>{escape(pp["name"])}</div>')
         for u in pp["projects"]:
-            extra = (f'Time saved with Claude: {escape(u.get("timeSaved") or "None")}' if u["type"] == "Claude"
+            extra = (f'Time saved with Claude: {escape(u["timeSaved"])}' if u["type"] == "Claude" and u.get("timeSaved")
                      else (f'Claude could have helped: {escape(u["couldHelp"])}' if u.get("couldHelp") else ""))
             o.append(f'<div style="margin:0 0 14px;padding-left:10px;border-left:3px solid {report.ACCENT if u["type"] == "Claude" else LINE}">'
                      f'<b>{escape(u["project"])}</b> {pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'

@@ -211,11 +211,7 @@ def clean_update(d: dict) -> dict | str:
     out = {"name": name, "week": d["week"], "project": project,
            "type": ptype, "progress": bullets, "nextSteps": steps,
            "timeSaved": None, "couldHelp": ""}
-    if ptype == "Claude":
-        if d.get("timeSaved") not in TIME_SAVED:
-            return "Pick how much time Claude saved this week."
-        out["timeSaved"] = d["timeSaved"]
-    else:
+    if ptype != "Claude":
         out["couldHelp"] = re.sub(r"\s+", " ", str(d.get("couldHelp", ""))).strip()[:300]
     return out
 

@@ -372,8 +372,8 @@ def render_html(r: dict, weeks: list) -> str:
                  + (f' · {len(pp["tasks"])} other' if pp["tasks"] else "") + "</span></div>")
         for u in pp["projects"]:
             meta = ""
-            if u["type"] == "Claude":
-                meta = f'⏱ Time saved with Claude: {escape(u.get("timeSaved") or "None")}'
+            if u["type"] == "Claude" and u.get("timeSaved"):
+                meta = f'⏱ Time saved with Claude: {escape(u["timeSaved"])}'
             elif u.get("couldHelp"):
                 meta = f'💡 Claude could have helped: {escape(u["couldHelp"])}'
             o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
@@ -394,7 +394,7 @@ def render_html(r: dict, weeks: list) -> str:
     # Claude impact
     o.append(f'<h2 id="impact" style="--c:{ACCENT}">Claude impact <span>about {c["hours"]:g} hours saved</span></h2>'
              '<p class="note">Each answer counts at its range midpoint: none 0, under 1 hr 0.5, 1–3 hrs 2, 3–5 hrs 4, 5+ hrs 6.</p><div class="cols"><div>'
-             '<div class="group-head">Top Claude projects by time saved</div>')
+             '<div class="group-head">Top Claude time savings</div>')
     if r["top"]:
         o.append('<table><thead><tr><th>Project</th><th>People</th><th class="num">Hours</th></tr></thead><tbody>'
                  + "".join(f'<tr><td>{escape(t["project"])}</td><td>{escape(", ".join(t["people"]))}</td><td class="num">{t["hours"]:g}</td></tr>' for t in r["top"])
