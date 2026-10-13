@@ -256,7 +256,7 @@ def run():
     check(s == 200, "report renders")
     check(html.index(">Avery Test<") < html.index(">Blake Test<") < html.index(">Casey Test<"), "digest is by person")
     check("Blocked" not in html and "At risk" not in html and "Status" not in html, "no status anywhere")
-    check(html.count(">new this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
+    check(html.count(">New this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
     check("Drafting the approval matrix" in html, "could-help suggestion shown")
     check("Gone Test" not in html and "Everyone is in" in html, "everyone in; inactive people not counted")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
@@ -268,7 +268,7 @@ def run():
     check("Other work:* ~4 hrs" in txt, "other work time in the summary")
     check("*Avery Test:* Commission Audit Tool, Spif/Adjustment Process Approval Rehaul · other work: Support Hub" in txt, "one line per person in the summary")
     check('id="digest"' in html and "Answered rep questions" in html and "Support Hub (other work)" in html, "other work in the report and in Claude impact")
-    check(html.count('class="lh">Next steps') >= 5, "next steps shown per update")
+    check(html.count('class="lh next">Next steps') >= 5, "next steps shown per update")
     print("    ", txt.replace("\n", "\n     "))
     (OUT / "report.html").write_text(html, encoding="utf-8")
 

@@ -195,8 +195,21 @@ def render_text(r: dict, base_url: str = "") -> str:
 
 # ---------------- HTML ----------------
 
-# Todoist-style: warm sidebar, white page, red accent, thin dividers, and
-# round markers (red for Claude work).
+# Todoist-style: warm sidebar, white page, red accent, and Todoist's project
+# colours: each person, section and kind of work gets one (as --c).
+PALETTE = ["#4073ff", "#af38eb", "#299438", "#ff9933", "#158fad", "#e05194", "#884dff", "#db4035", "#7ecc49", "#14aaf5"]
+GREEN, BLUE, TEAL, ORANGE, GRAPE, ACCENT = "#299438", "#4073ff", "#158fad", "#ff9933", "#884dff", "#dc4c3e"
+
+
+def colour_for(key: str) -> str:
+    """Stable colour for a kind of work, so Support Hub looks the same every week."""
+    return PALETTE[sum(map(ord, key.lower())) % len(PALETTE)]
+
+
+def person_colours(names) -> dict:
+    return {n: PALETTE[i % len(PALETTE)] for i, n in enumerate(sorted(names))}
+
+
 STYLE = """
 :root{--bg:#fff;--side:#fcfaf8;--ink:#202020;--muted:#666;--faint:#999;--line:#f0f0f0;--edge:#e6e6e6;--hover:#f5f5f5;
 --accent:#dc4c3e;--accent-hover:#c3392c;--accent-soft:#fff6f0;--p1:#d1453b;--p2:#eb8909;--p3:#246fe0;--p4:#999;--done:#058527}
@@ -209,7 +222,9 @@ aside{background:var(--side);border-right:1px solid var(--line);padding:20px 12p
 .app{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin:0 0 18px 6px}
 .app i{width:22px;height:22px;border-radius:6px;background:var(--accent);display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:13px}
 aside select{width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink);margin-bottom:14px}
-nav a{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:5px;color:var(--ink);text-decoration:none;font-size:14px}
+nav a{display:flex;gap:10px;align-items:center;padding:6px 8px;border-radius:5px;color:var(--ink);text-decoration:none;font-size:14px}
+nav a i{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
+nav a em{flex:1;font-style:normal}
 nav a:hover{background:var(--hover)}
 nav a span{color:var(--faint);font-size:12px}
 nav a.alert span{color:var(--p1);font-weight:600}
@@ -219,11 +234,13 @@ nav a.alert span{color:var(--p1);font-weight:600}
 main{padding:32px 32px 80px;max-width:860px;width:100%}
 h1{font-size:20px;margin:0}
 .sub{color:var(--muted);font-size:13px;margin:2px 0 0}
-.stats{display:flex;flex-wrap:wrap;gap:8px 28px;margin:20px 0 6px;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
-.stat span{font-size:12px;color:var(--muted)}
-.stat i{display:block;font-style:normal;font-size:11.5px;color:var(--faint)}
-h2{display:flex;align-items:baseline;gap:8px;font-size:15px;margin:34px 0 0;padding-bottom:6px;border-bottom:1px solid var(--line);scroll-margin-top:16px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:20px 0 6px}
+.stat{border-radius:10px;padding:12px 14px;background:color-mix(in srgb,var(--c) 10%,var(--bg));border:1px solid color-mix(in srgb,var(--c) 25%,var(--bg))}
+.stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums;color:color-mix(in srgb,var(--c) 85%,var(--ink))}
+.stat span{font-size:12px;color:var(--ink);font-weight:600}
+.stat i{display:block;font-style:normal;font-size:11.5px;color:var(--muted)}
+h2{display:flex;align-items:baseline;gap:8px;font-size:15px;margin:34px 0 0;padding-bottom:6px;border-bottom:2px solid color-mix(in srgb,var(--c,var(--line)) 30%,var(--bg));scroll-margin-top:16px}
+h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--c,var(--faint));align-self:center;flex:none}
 h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .note{color:var(--muted);font-size:12.5px;margin:8px 0 0}
 .ring{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--p4);margin-top:1px}
@@ -231,10 +248,19 @@ h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .ring.r-Pending{border-color:var(--p2)}.ring.r-Denied{border-color:var(--p1)}
 .ring.sent,.ring.r-Approved{border-color:var(--done);background:var(--done);position:relative}
 .ring.sent::after,.ring.r-Approved::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
-.person{font-size:16px;margin-top:28px}
-.sublabel{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin:12px 0 0}
+.pcard{border:1px solid var(--edge);border-left:4px solid var(--c);border-radius:10px;padding:12px 16px 4px;margin-top:16px;background:color-mix(in srgb,var(--c) 4%,var(--bg))}
+.pcard .row:last-child{border-bottom:0}
+.pcard .row ul li::marker{color:var(--c)}
+.phead{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.phead .label{font-weight:400}
+.av{flex:none;width:30px;height:30px;border-radius:50%;background:var(--c);color:#fff;font-size:12px;font-weight:700;display:inline-grid;place-items:center;letter-spacing:.02em}
+.av.sm{width:24px;height:24px;font-size:10.5px}
+.av.off{background:transparent;border:2px dashed var(--faint);color:var(--faint)}
+.sublabel{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--c);margin:12px 0 0}
 .label{font-size:12px;color:var(--muted)}
 .label.claude{color:var(--accent)}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;line-height:1.6;padding:0 9px;border-radius:999px;white-space:nowrap;
+background:color-mix(in srgb,var(--c) 15%,var(--bg));color:color-mix(in srgb,var(--c) 75%,var(--ink))}
 .group-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:22px 0 2px;font-weight:700;font-size:14px}
 .group-head .label{font-weight:400}
 .group-head .newp{font-weight:400;font-size:11.5px;color:var(--faint)}
@@ -243,6 +269,7 @@ h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .row .top{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
 .row ul{margin:1px 0 0;padding-left:16px;color:var(--muted);font-size:13.5px}
 .row .lh{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin-top:6px}
+.row .lh.prog{color:#299438}.row .lh.next{color:#4073ff}
 .row .meta{font-size:12px;color:var(--muted);margin-top:4px}
 .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));column-gap:24px}
 .people .row{align-items:center;padding:8px 0}
@@ -251,8 +278,9 @@ table{width:100%;border-collapse:collapse;font-size:13.5px}
 th,td{text-align:left;padding:8px 8px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-size:12px;color:var(--faint);font-weight:600}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-.bar{height:4px;background:var(--line);border-radius:2px;margin-top:5px;min-width:60px}.bar>div{height:100%;border-radius:2px;background:var(--p3)}
-tr.flag td.pct{color:var(--p1);font-weight:600}tr.flag .bar>div{background:var(--p1)}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:5px;min-width:60px}.bar>div{height:100%;border-radius:3px;background:var(--c,var(--p3))}
+td .av{margin-right:8px;vertical-align:middle}
+tr.flag td.pct{color:var(--p1);font-weight:600}tr.flag .bar>div{background:repeating-linear-gradient(45deg,var(--p1) 0 6px,color-mix(in srgb,var(--p1) 70%,#fff) 6px 12px)}
 .table-scroll{overflow-x:auto}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:28px}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:12px}
@@ -263,18 +291,29 @@ tr.flag td.pct{color:var(--p1);font-weight:600}tr.flag .bar>div{background:var(-
 @media (max-width:760px){.layout{grid-template-columns:1fr}aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
 nav{display:none}.actions{flex-direction:row;flex-wrap:wrap;border:0;margin:0;padding:0}.actions a,.actions button{width:auto;border:1px solid var(--edge)}
 main{padding:20px 16px 60px}.cols{grid-template-columns:1fr}}
-@media print{aside,#toast{display:none}.layout{display:block}main{padding:0;max-width:none}body{font-size:11.5px}
+@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.pcard{break-inside:avoid}aside,#toast{display:none}.layout{display:block}main{padding:0;max-width:none}body{font-size:11.5px}
 h2{break-after:avoid}.row{break-inside:avoid}.gallery{grid-template-columns:repeat(6,1fr)}.gallery img{height:70px}}
 """
 
 
+def _pill(text: str, colour: str) -> str:
+    return f'<span class="pill" style="--c:{colour}">{escape(text)}</span>'
+
+
 def _label(t: str) -> str:
-    text = {"Claude": "# Claude project", "Non-Claude": "# Non-Claude project"}.get(t, t)
-    return f'<span class="label{" claude" if t == "Claude" else ""}">{escape(text)}</span>'
+    return _pill("Claude project", ACCENT) if t == "Claude" else _pill("Non-Claude project", TEAL)
 
 
-def _stat(value: str, label: str, note: str = "") -> str:
-    return f'<div class="stat"><b>{value}</b><span>{label}</span>{f"<i>{note}</i>" if note else ""}</div>'
+def _initials(name: str) -> str:
+    return "".join(w[0] for w in name.split()[:2]).upper()
+
+
+def _av(name: str, colour: str, cls: str = "") -> str:
+    return f'<span class="av {cls}" style="--c:{colour}" aria-hidden="true">{escape(_initials(name))}</span>'
+
+
+def _stat(value: str, label: str, note: str = "", colour: str = BLUE) -> str:
+    return f'<div class="stat" style="--c:{colour}"><b>{value}</b><span>{label}</span>{f"<i>{note}</i>" if note else ""}</div>'
 
 
 def _wow(now, before, has_prev, fmt=lambda v: f"{v:g}") -> str:
@@ -289,45 +328,49 @@ def _wow(now, before, has_prev, fmt=lambda v: f"{v:g}") -> str:
 def render_html(r: dict, weeks: list) -> str:
     c, l, p, hp = r["cur"], r["last"], r["participation"], r["hasPrev"]
     wk = r["week"]
+    pc = person_colours(set(p["complete"]) | set(p["missing"]) | {pp["name"] for pp in r["people"]} | {u["name"] for u in r["spend"]})
     opts = "".join(f'<option value="{w}"{" selected" if w == wk else ""}>Week ending {escape(nice_date(w))}</option>' for w in weeks)
     o = [f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,"><title>Weekly Progress Report</title><style>{STYLE}</style></head><body><div class="layout">
 <aside><div class="app"><i>✓</i>Weekly Progress</div>
 <form method="get" action="/report"><select name="week" onchange="this.form.submit()" aria-label="Week">{opts}</select></form>
-<nav><a href="#people">Participation <span>{len(p['complete'])}/{p['roster']}</span></a>
-<a href="#digest">The week, by person <span>{c['projects']} proj · {len(c['tasks'])} other</span></a>
-<a href="#impact">Claude impact <span>{c['hours']:g} hrs</span></a>
-<a href="#spend"{' class="alert"' if r['flagged'] else ''}>Usage and spend <span>{money(c['spend'])}</span></a></nav>
+<nav><a href="#people" style="--c:{GREEN}"><i></i><em>Participation</em><span>{len(p['complete'])}/{p['roster']}</span></a>
+<a href="#digest" style="--c:{BLUE}"><i></i><em>The week, by person</em><span>{c['projects']} proj · {len(c['tasks'])} other</span></a>
+{"".join(f'<a href="#p-{i}" style="--c:{pc[pp["name"]]};padding-left:26px"><i></i><em>{escape(pp["name"])}</em><span>{len(pp["projects"]) + len(pp["tasks"])}</span></a>' for i, pp in enumerate(r["people"]))}
+<a href="#impact" style="--c:{ACCENT}"><i></i><em>Claude impact</em><span>{c['hours']:g} hrs</span></a>
+<a href="#spend" style="--c:{GRAPE}"{' class="alert"' if r['flagged'] else ''}><i></i><em>Usage and spend</em><span>{money(c['spend'])}</span></a></nav>
 <div class="actions"><button type="button" onclick="copySlack()">Copy Slack summary</button><button type="button" onclick="print()">Print / Save as PDF</button>
 <a href="/export/updates.csv?week={wk}">Projects CSV</a><a href="/export/usage.csv?week={wk}">Usage CSV</a><a href="/admin">Admin</a></div></aside>
 <main><h1>Week ending {escape(nice_date(wk))}</h1><p class="sub">Weekly digest</p>"""]
 
     spend_note = f"{100 * c['spend'] / c['budget']:.0f}% of {money(c['budget'])}" if c["budget"] else "none reported"
     o.append('<div class="stats">'
-             + _stat(f"{len(p['complete'])}/{p['roster']}", "sent their update")
-             + _stat(str(c["projects"]), "projects", f"{c['claude']} Claude · {c['nonClaude']} non-Claude")
-             + _stat(f"{c['taskHours']:g} hrs", "on other work", f"{len(c['tasks'])} item{'' if len(c['tasks']) == 1 else 's'}")
-             + _stat(f"{c['hours']:g} hrs", "saved with Claude", _wow(c["hours"], l["hours"], hp, lambda v: f"{v:g} hrs"))
-             + _stat(money(c["spend"]), "Claude spend this month", spend_note)
+             + _stat(f"{len(p['complete'])}/{p['roster']}", "sent their update", "everyone's in" if not p["missing"] else f"{len(p['missing'])} to go", GREEN)
+             + _stat(str(c["projects"]), "projects", f"{c['claude']} Claude · {c['nonClaude']} non-Claude", BLUE)
+             + _stat(f"{c['taskHours']:g} hrs", "on other work", f"{len(c['tasks'])} item{'' if len(c['tasks']) == 1 else 's'}", ORANGE)
+             + _stat(f"{c['hours']:g} hrs", "saved with Claude", _wow(c["hours"], l["hours"], hp, lambda v: f"{v:g} hrs"), ACCENT)
+             + _stat(money(c["spend"]), "Claude spend this month", spend_note, GRAPE)
              + "</div>")
 
     # participation
-    o.append(f'<h2 id="people">Participation <span>{len(p["complete"])} of {p["roster"]}</span></h2><div class="people">')
+    o.append(f'<h2 id="people" style="--c:{GREEN}">Participation <span>{len(p["complete"])} of {p["roster"]}</span></h2><div class="people">')
     for n in p["complete"]:
-        o.append(f'<div class="row"><span class="ring sent"></span><div class="body">{escape(n)}</div></div>')
+        o.append(f'<div class="row">{_av(n, pc[n], "sm")}<div class="body">{escape(n)}</div><span class="ring sent" title="Sent"></span></div>')
     for n in p["missing"]:
-        o.append(f'<div class="row missing"><span class="ring"></span><div class="body">{escape(n)} <span class="label">hasn\'t sent yet</span></div></div>')
+        o.append(f'<div class="row missing">{_av(n, pc[n], "sm off")}<div class="body">{escape(n)} <span class="label">hasn\'t sent yet</span></div></div>')
     o.append("</div>")
     if not p["missing"]:
         o.append('<p class="note">Everyone is in.</p>')
 
     # the digest, by person
-    o.append(f'<h2 id="digest">The week, by person <span>{c["projects"]} project{"" if c["projects"] == 1 else "s"}'
+    o.append(f'<h2 id="digest" style="--c:{BLUE}">The week, by person <span>{c["projects"]} project{"" if c["projects"] == 1 else "s"}'
              f' · {len(c["tasks"])} other work item{"" if len(c["tasks"]) == 1 else "s"}</span></h2>')
     if not r["people"]:
         o.append('<p class="empty">Nothing sent for this week yet.</p>')
-    for pp in r["people"]:
-        o.append(f'<div class="group-head person">{escape(pp["name"])}</div>')
+    for i, pp in enumerate(r["people"]):
+        o.append(f'<div class="pcard" id="p-{i}" style="--c:{pc[pp["name"]]}"><div class="phead">{_av(pp["name"], pc[pp["name"]])}{escape(pp["name"])}'
+                 f'<span class="label">{len(pp["projects"])} project{"" if len(pp["projects"]) == 1 else "s"}'
+                 + (f' · {len(pp["tasks"])} other' if pp["tasks"] else "") + "</span></div>")
         for u in pp["projects"]:
             meta = ""
             if u["type"] == "Claude":
@@ -336,21 +379,21 @@ def render_html(r: dict, weeks: list) -> str:
                 meta = f'💡 Claude could have helped: {escape(u["couldHelp"])}'
             o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
                      f'<div class="top"><strong>{escape(u["project"])}</strong>{_label(u["type"])}'
-                     + ('<span class="label">new this week</span>' if u["new"] else "") + "</div>"
-                     + '<div class="lh">Progress</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
-                     + ('<div class="lh">Next steps</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
+                     + (_pill("New this week", GREEN) if u["new"] else "") + "</div>"
+                     + '<div class="lh prog">Progress</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
+                     + ('<div class="lh next">Next steps</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div class="meta">{meta}</div>' if meta else "") + "</div></div>")
         if pp["tasks"]:
             o.append('<div class="sublabel">Other work' + (f' · about {pp["taskHours"]:g} hrs' if pp["taskHours"] else "") + "</div>")
         for t in pp["tasks"]:
-            bits = [escape(t["timeSpent"])] if t.get("timeSpent") else []
-            bits.append(f'<span class="label claude">Claude saved {escape(t["timeSaved"])}</span>' if t["claude"] else '<span class="label">no Claude</span>')
-            o.append(f'<div class="row"><span class="ring{" claude" if t["claude"] else ""}"></span><div class="body"><div class="top"><strong>{escape(t["category"])}</strong>'
-                     f'<span class="label">{" · ".join(bits)}</span></div>'
+            o.append(f'<div class="row"><span class="ring{" claude" if t["claude"] else ""}"></span><div class="body"><div class="top">{_pill(t["category"], colour_for(t["category"]))}'
+                     + (f'<span class="label">{escape(t["timeSpent"])}</span>' if t.get("timeSpent") else "")
+                     + (_pill("Claude saved " + t["timeSaved"], ACCENT) if t["claude"] else '<span class="label">no Claude</span>') + "</div>"
                      + (f'<div class="meta">{escape(t["note"])}</div>' if t.get("note") else "") + "</div></div>")
+        o.append("</div>")
 
     # Claude impact
-    o.append(f'<h2 id="impact">Claude impact <span>about {c["hours"]:g} hours saved</span></h2>'
+    o.append(f'<h2 id="impact" style="--c:{ACCENT}">Claude impact <span>about {c["hours"]:g} hours saved</span></h2>'
              '<p class="note">Each answer counts at its range midpoint: none 0, under 1 hr 0.5, 1–3 hrs 2, 3–5 hrs 4, 5+ hrs 6.</p><div class="cols"><div>'
              '<div class="group-head">Top Claude projects by time saved</div>')
     if r["top"]:
@@ -369,13 +412,13 @@ def render_html(r: dict, weeks: list) -> str:
 
     # usage and spend
     wk_note = "" if r["sameMonth"] else " A new month started this week, so there's no weekly change."
-    o.append(f'<h2 id="spend">Usage and spend <span>{money(c["spend"])} of {money(c["budget"])}</span></h2>'
+    o.append(f'<h2 id="spend" style="--c:{GRAPE}">Usage and spend <span>{money(c["spend"])} of {money(c["budget"])}</span></h2>'
              f'<p class="note">Spend so far this month against each person\'s monthly budget. Over {FLAG_AT}% is flagged.{wk_note}</p>')
     if r["spend"]:
         o.append('<div class="table-scroll"><table><thead><tr><th>Name</th><th class="num">Spend</th><th class="num">Budget</th><th>Used</th><th class="num">This week</th></tr></thead><tbody>')
         for u in r["spend"]:
             ws = "—" if u["weekSpend"] is None else ("+" if u["weekSpend"] >= 0 else "−") + money(abs(u["weekSpend"]))
-            o.append(f'<tr class="{"flag" if u["flag"] else ""}"><td>{escape(u["name"])}{" ⚑" if u["flag"] else ""}</td><td class="num">{money(u["spend"])}</td>'
+            o.append(f'<tr class="{"flag" if u["flag"] else ""}" style="--c:{pc[u["name"]]}"><td>{_av(u["name"], pc[u["name"]], "sm")}{escape(u["name"])}{" ⚑" if u["flag"] else ""}</td><td class="num">{money(u["spend"])}</td>'
                      f'<td class="num">{money(u["budget"])}</td><td class="pct">{u["pct"]:.0f}%<div class="bar"><div style="width:{min(u["pct"], 100):.0f}%"></div></div></td>'
                      f'<td class="num">{ws}</td></tr>')
         o.append(f'<tr><th>Team</th><th class="num">{money(c["spend"])}</th><th class="num">{money(c["budget"])}</th>'
