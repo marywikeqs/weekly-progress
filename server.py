@@ -85,6 +85,7 @@ LOCK = threading.Lock()
 
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
+TIME_LEFT = report.TIME_LEFT
 REQUEST_STATUSES = ["Approved", "Pending", "Denied"]
 DEFAULT_CATEGORIES = ["Support Hub", "Deal Desk", "Ad hoc analysis"]
 
@@ -208,8 +209,10 @@ def clean_update(d: dict) -> dict | str:
         return "Add at least one line of progress this week."
     if not steps:
         return "Add at least one next step."
+    if d.get("timeLeft") not in TIME_LEFT:
+        return "Choose how much time is left on the project."
     out = {"name": name, "week": d["week"], "project": project,
-           "type": ptype, "progress": bullets, "nextSteps": steps,
+           "type": ptype, "timeLeft": d["timeLeft"], "progress": bullets, "nextSteps": steps,
            "timeSaved": None, "couldHelp": ""}
     return out
 
@@ -396,6 +399,7 @@ UPDATE_COLS = [
     ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]),
     ("Project", lambda r: r["project"]),
     ("Type", lambda r: r["type"]),
+    ("Time left", lambda r: r.get("timeLeft", "")),
     ("Progress this week", lambda r: "\n".join("• " + b for b in r["progress"])),
     ("Next steps", lambda r: "\n".join("• " + b for b in r.get("nextSteps", []))),
     ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
@@ -419,6 +423,7 @@ USAGE_COLS = [
     ("Reason", lambda r: (r.get("increase") or {}).get("reason", "")),
     ("Request status", lambda r: (r.get("increase") or {}).get("status", "")),
     ("Where Claude could have helped", lambda r: r.get("retro", "")),
+    ("Upcoming project ideas", lambda r: "\n".join("• " + i["idea"] + (f" — {i['why']}" if i.get("why") else "") for i in r.get("ideas", []))),
     ("Screenshot", lambda r: f"/screenshots/{r['screenshot']}" if r.get("screenshot") else ""),
     ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
 ]
@@ -537,7 +542,7 @@ class Handler(BaseHTTPRequestHandler):
                 "roster": [p["name"] for p in cfg["roster"] if p["active"]],
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
-                "timeSaved": TIME_SAVED, "requestStatuses": REQUEST_STATUSES,
+                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "requestStatuses": REQUEST_STATUSES,
                 "taskCategories": task_categories(),
                 "writable": WRITABLE, "persistent": state_persistent(),
             })
@@ -662,6 +667,18 @@ class Handler(BaseHTTPRequestHandler):
             retro = re.sub(r"\s+", " ", str(body.get("retro") or "")).strip()[:500]
             if not retro:
                 errors.append({"retro": True, "error": "Say where Claude could have helped this week, or write \"Nothing this week\"."})
+            # upcoming project ideas (optional): a name and a short why each
+            ideas = []
+            for i, x in enumerate(body.get("ideas") or []):
+                x = x if isinstance(x, dict) else {}
+                idea = re.sub(r"\s+", " ", str(x.get("idea") or "")).strip()[:120]
+                why = re.sub(r"\s+", " ", str(x.get("why") or "")).strip()[:300]
+                if not idea and not why:
+                    continue
+                if not idea:
+                    errors.append({"idea": i, "error": "Name the idea."})
+                ideas.append({"idea": idea, "why": why})
+            ideas = ideas[:10]
             cur_use = next((r for r in DATA["usage"] if r["name"] == name and r["week"] == week), None)
             shot = cur_use.get("screenshot") if cur_use else None
             if not errors and not (body.get("usage") or {}).get("screenshot") and not shot:
@@ -677,6 +694,7 @@ class Handler(BaseHTTPRequestHandler):
                                                 "errors": [{"usage": True, "error": "That screenshot couldn't be read."}]})
             usage["screenshot"] = shot
             usage["retro"] = retro
+            usage["ideas"] = ideas
 
             # projects: replace this person's week with what was sent
             stamp = now()

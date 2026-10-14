@@ -14,6 +14,7 @@ from html import escape
 
 # Time-saved ranges counted at their midpoints.
 TIME_SAVED_HOURS = {"None": 0, "Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5+ hrs": 6}
+TIME_LEFT = ["Wrapping up this week", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date"]
 FLAG_AT = 80  # percent of budget
 
 
@@ -156,6 +157,9 @@ def build(data: dict, week: str) -> dict:
                             for u in cur["updates"] if u["type"] != "Claude" and u.get("couldHelp")],
                          key=lambda s: (s["name"], s["project"].lower()))
 
+    # upcoming project ideas, by person
+    ideas = [{"name": u["name"], **i} for u in sorted(cur["usage"], key=lambda u: u["name"]) for i in u.get("ideas", [])]
+
     # other work, grouped by kind
     other: dict = {}
     for t in sorted(cur["tasks"], key=lambda t: t["name"]):
@@ -176,7 +180,7 @@ def build(data: dict, week: str) -> dict:
     return {
         "week": week, "prevWeek": prev, "hasPrev": has_prev, "sameMonth": same_month,
         "cur": cur, "last": last, "participation": participation,
-        "people": people, "other": other_groups, "top": top, "suggestions": suggestions,
+        "people": people, "other": other_groups, "top": top, "suggestions": suggestions, "ideas": ideas,
         "spend": spend_rows, "requests": requests,
         "flagged": [u for u in spend_rows if u["flag"]],
         "shots": [u for u in spend_rows if u.get("screenshot")],
@@ -204,7 +208,7 @@ def render_text(r: dict, base_url: str = "") -> str:
     lines.append(f"*Projects:* {c['projects']}{_delta(c['projects'], l['projects'], hp)} — "
                  f"{c['claude']} Claude · {c['nonClaude']} non-Claude")
     for pp in r["people"]:
-        line = ", ".join(u["project"] for u in pp["projects"])
+        line = ", ".join(u["project"] + (f" ({u['timeLeft']} left)" if u.get("timeLeft") else "") for u in pp["projects"])
         if pp["tasks"]:
             line += (" · " if line else "") + "other work: " + ", ".join(t["category"] for t in pp["tasks"])
         lines.append(f"   • *{pp['name']}:* {line}")
@@ -217,6 +221,9 @@ def render_text(r: dict, base_url: str = "") -> str:
     if r["suggestions"]:
         lines.append("*Where Claude could have helped:*")
         lines += [f"   • {s['name']}: {s['text']}" for s in r["suggestions"]]
+    if r["ideas"]:
+        lines.append("*Upcoming project ideas:*")
+        lines += [f"   • {i['name']}: {i['idea']}" + (f" — {i['why']}" if i["why"] else "") for i in r["ideas"]]
     if c["budget"]:
         lines.append(f"*Spend:* {money(c['spend'])} of {money(c['budget'])} monthly budget ({100 * c['spend'] / c['budget']:.0f}%)"
                      + (" · over 80%: " + ", ".join(f"{u['name']} ({u['pct']:.0f}%)" for u in r["flagged"]) if r["flagged"] else ""))
@@ -311,6 +318,9 @@ background:color-mix(in srgb,var(--c) 15%,var(--bg));color:color-mix(in srgb,var
 .row .lh{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin-top:6px}
 .row .lh.prog{color:#299438}.row .lh.next{color:#4073ff}
 .row .meta{font-size:12px;color:var(--muted);margin-top:4px}
+.tleft{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.ideas{list-style:none;padding:0;margin:8px 0 0}.ideas li{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.ideas li:last-child{border-bottom:0}.ideas .why{font-size:13px;color:var(--muted)}
 .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));column-gap:24px}
 .people .row{align-items:center;padding:8px 0}
 .people .missing{color:var(--muted)}
@@ -334,6 +344,11 @@ main{padding:20px 16px 60px}.cols,.pgrid{grid-template-columns:1fr}}
 @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.pcard{break-inside:avoid}aside,#toast{display:none}.layout{display:block}main{padding:0;max-width:none}body{font-size:11.5px}
 h2{break-after:avoid}.row{break-inside:avoid}.gallery{grid-template-columns:repeat(6,1fr)}.gallery img{height:70px}}
 """
+
+
+def time_left(t: str) -> str:
+    """'2–4 weeks' -> '2–4 weeks left'; the end-state options read as they are."""
+    return t if t.startswith(("Wrapping", "Ongoing")) else t + " left"
 
 
 def _pill(text: str, colour: str) -> str:
@@ -378,6 +393,7 @@ def render_html(r: dict, weeks: list) -> str:
 <a href="#glance" style="--c:{ORANGE}"><i></i><em>At a glance</em><span></span></a>
 <a href="#digest" style="--c:{BLUE}"><i></i><em>The week, by person</em><span>{c['projects']} proj · {len(c['tasks'])} other</span></a>
 {"".join(f'<a href="#p-{i}" style="--c:{pc[pp["name"]]};padding-left:26px"><i></i><em>{escape(pp["name"])}</em><span>{len(pp["projects"]) + len(pp["tasks"])}</span></a>' for i, pp in enumerate(r["people"]))}
+<a href="#ideas" style="--c:{TEAL}"><i></i><em>Upcoming ideas</em><span>{len(r['ideas'])}</span></a>
 <a href="#impact" style="--c:{ACCENT}"><i></i><em>Claude impact</em><span>{c['hours']:g} hrs</span></a>
 <a href="#spend" style="--c:{GRAPE}"{' class="alert"' if r['flagged'] else ''}><i></i><em>Usage and spend</em><span>{money(c['spend'])}</span></a></nav>
 <div class="actions"><button type="button" onclick="copySlack()">Copy Slack summary</button><button type="button" onclick="print()">Print / Save as PDF</button>
@@ -439,7 +455,8 @@ def render_html(r: dict, weeks: list) -> str:
                 meta = f'💡 Claude could have helped: {escape(u["couldHelp"])}'
             o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
                      f'<div class="top"><strong>{escape(u["project"])}</strong>{_label(u["type"])}'
-                     + (_pill("New this week", GREEN) if u["new"] else "") + "</div>"
+                     + (_pill("New this week", GREEN) if u["new"] else "")
+                     + (f'<span class="tleft">⏳ {escape(time_left(u["timeLeft"]))}</span>' if u.get("timeLeft") else "") + "</div>"
                      + '<div class="lh prog">Progress</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
                      + ('<div class="lh next">Next steps</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div class="meta">{meta}</div>' if meta else "") + "</div></div>")
@@ -451,6 +468,15 @@ def render_html(r: dict, weeks: list) -> str:
                      + (f'<div class="meta">{escape(t["note"])}</div>' if t.get("note") else "") + "</div></div>")
         o.append("</div>")
     o.append("</div>")
+
+    # upcoming project ideas
+    o.append(f'<h2 id="ideas" style="--c:{TEAL}">Upcoming project ideas <span>{len(r["ideas"])}</span></h2>')
+    if r["ideas"]:
+        o.append('<ul class="ideas">' + "".join(
+            f'<li>{_av(i["name"], pc.get(i["name"], BLUE), "sm")}<div><strong>{escape(i["idea"])}</strong> <span class="label">{escape(i["name"])}</span>'
+            + (f'<div class="why">{escape(i["why"])}</div>' if i["why"] else "") + "</div></li>" for i in r["ideas"]) + "</ul>")
+    else:
+        o.append('<p class="empty">No new ideas this week.</p>')
 
     # Claude impact
     o.append(f'<h2 id="impact" style="--c:{ACCENT}">Claude impact <span>about {c["hours"]:g} hours saved</span></h2>'

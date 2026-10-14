@@ -180,6 +180,7 @@ def html(r: dict, note: str = "") -> str:
             b.append(f'<div style="margin:0 0 12px;padding-left:8px;border-left:3px solid {report.ACCENT if u["type"] == "Claude" else LINE}">'
                      f'<b>{escape(u["project"])}</b><br>{pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'
                      f'{" " + pill("New this week", report.GREEN) if u["new"] else ""}'
+                     + (f'<div style="font-size:12px;font-weight:bold;color:{MUTED};margin-top:4px">⏳ {escape(report.time_left(u["timeLeft"]))}</div>' if u.get("timeLeft") else "") +
                      f'<div style="font-size:11px;font-weight:bold;color:{report.GREEN};margin-top:4px">PROGRESS</div><ul {ul}>' + "".join(f"<li>{escape(x)}</li>" for x in u["progress"]) + "</ul>"
                      + (f'<div style="font-size:11px;font-weight:bold;color:{report.BLUE};margin-top:4px">NEXT STEPS</div><ul {ul}>' + "".join(f"<li>{escape(x)}</li>" for x in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div {small}>{extra}</div>' if extra else "") + "</div>")
@@ -196,6 +197,10 @@ def html(r: dict, note: str = "") -> str:
         rows = ['<tr>' + cards[i] + '<td width="12" style="width:12px;font-size:0">&nbsp;</td>' + cards[i + 1] + '</tr>' for i in range(0, len(cards), 2)]
         o.append('<table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:separate;table-layout:fixed;font-size:13px">'
                  + '<tr><td colspan="3" height="12" style="height:12px;font-size:0">&nbsp;</td></tr>'.join(rows) + "</table>")
+    if r["ideas"]:
+        o.append(f'<h2 {h2}>Upcoming project ideas</h2><ul style="margin:0;padding-left:18px">'
+                 + "".join(f'<li style="margin:0 0 6px"><b>{escape(i["idea"])}</b> <span style="color:{MUTED}">· {escape(i["name"])}</span>'
+                           + (f'<br><span style="color:{MUTED};font-size:13px">{escape(i["why"])}</span>' if i["why"] else "") + "</li>" for i in r["ideas"]) + "</ul>")
     if r["spend"]:
         o.append(f'<h2 {h2}>Usage and spend</h2><table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;width:100%">'
                  f'<tr style="color:{MUTED};font-size:12px"><td style="padding:4px 8px 4px 0;border-bottom:1px solid {LINE}">Name</td>'

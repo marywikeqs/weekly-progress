@@ -10,6 +10,7 @@ report can be looked at afterwards (python _test/api_test.py --keep serves it).
 """
 
 import base64
+import io
 import json
 import os
 import shutil
@@ -141,11 +142,12 @@ def run():
     s, d = call("GET", "/api/config")
     check(d["roster"] == people, "inactive people left off the form")
 
-    def send(name, week, projects, usage, tasks=None, retro="Drafting the approval matrix"):
-        return call("POST", "/api/submit", {"name": name, "week": week, "projects": projects, "usage": usage, "tasks": tasks or [], "retro": retro})
+    def send(name, week, projects, usage, tasks=None, retro="Drafting the approval matrix", ideas=None):
+        return call("POST", "/api/submit", {"name": name, "week": week, "projects": projects, "usage": usage, "tasks": tasks or [], "retro": retro,
+                                            "ideas": ideas or []})
 
     def proj(project, type_, _old_status, progress, saved=None, help_="", steps=None):
-        return {"project": project, "type": type_, "progress": progress, "nextSteps": steps or ["Keep going"],
+        return {"project": project, "type": type_, "timeLeft": "2–4 weeks", "progress": progress, "nextSteps": steps or ["Keep going"],
                 "timeSaved": saved, "couldHelp": help_}
 
     hub = {"category": "support hub", "timeSpent": "3-5 hrs", "claude": True, "timeSaved": "1-3 hrs", "note": "Answered rep questions"}
@@ -167,6 +169,11 @@ def run():
     check(send("Avery Test", w1, [], use)[0] == 400, "needs at least one project")
     check(send("Avery Test", w1, [{**cat, "progress": ["", " "]}], use)[0] == 400, "needs a progress line")
     check(send("Avery Test", w1, [{**cat, "nextSteps": [" "]}], use)[0] == 400, "needs a next step")
+    s, d = send("Avery Test", w1, [{**cat, "timeLeft": ""}], use)
+    check(s == 400 and "time is left" in d["error"], "needs time left on each project")
+    check(send("Avery Test", w1, [{**cat, "timeLeft": "forever"}], use)[0] == 400, "time left must be one of the choices")
+    s, d = send("Avery Test", w1, [cat], use, ideas=[{"idea": "", "why": "Saves time"}])
+    check(s == 400 and d["errors"][0]["idea"] == 0, "an idea's why needs the idea itself")
     s, d = send("Avery Test", w1, [cat], use, [hub, {**hub, "claude": None}])
     check(s == 400 and d["errors"][0].get("task") == 1, "a bad other-work line is pointed at by index")
     check(send("Avery Test", w1, [cat], use, [{**hub, "timeSaved": None}])[0] == 400, "Claude used on other work needs time saved")
@@ -200,7 +207,8 @@ def run():
     check(len(call("GET", f"/api/mine?name=Avery%20Test&week={w1}")[1]["updates"]) == 1, "a project left off the resend is removed")
     check(d["usage"]["screenshot"] == shot and d["usage"]["spend"] == 430, "resend without a screenshot keeps the one on file")
     check(call("GET", f"/api/mine?name=Avery%20Test&week={w1}")[1]["tasks"] == [], "other work left off the resend is removed")
-    send("Avery Test", w1, [cat, spif], {**use, "spend": 430, "screenshot": None, "increase": {**use["increase"], "status": "Approved"}}, [hub])
+    send("Avery Test", w1, [cat, spif], {**use, "spend": 430, "screenshot": None, "increase": {**use["increase"], "status": "Approved"}}, [hub],
+         ideas=[{"idea": "Auto-build QBR decks", "why": "Saves about 2 hrs per QBR"}, {"idea": " ", "why": ""}, {"idea": "Renewal alerts"}])
 
     send("Blake Test", w1, [proj("Commission Audit Tool", "Claude", "Blocked", ["Waiting on CIQ API access."], "1-3 hrs"),
                             proj("Board Deck Automation", "Claude", "On track", ["First pass at the monthly deck."], "5+ hrs")],
@@ -272,6 +280,10 @@ def run():
     check("Blocked" not in html and "At risk" not in html and "Status" not in html, "no status anywhere")
     check(html.count(">New this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
     check("Drafting the approval matrix" in html, "retro answer shown")
+    check("⏳ 2–4 weeks left" in html, "time left shown on each project")
+    check('id="ideas"' in html and "Auto-build QBR decks" in html and "Saves about 2 hrs per QBR" in html and "Renewal alerts" in html, "ideas section, blank idea dropped")
+    s, t1 = call("GET", f"/report.txt?week={w1}", auth=ADMIN, raw=True)
+    check("(2–4 weeks left)" in t1.decode() and "Avery Test: Auto-build QBR decks — Saves about 2 hrs per QBR" in t1.decode(), "Slack text has time left and ideas")
     check('id="glance"' in html and html.index('id="glance"') < html.index('id="digest"'), "At a glance comes before the full breakdown")
     check("Gone Test" not in html and "Everyone is in" in html, "everyone in; inactive people not counted")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
@@ -281,7 +293,7 @@ def run():
     txt = txt.decode()
     check("~2 hrs (+2 hrs vs last week)" in txt, "Claude hours come from other work only now: Support Hub 1-3 hrs = 2; projects no longer ask")
     check("Other work:* Support Hub (1)" in txt and "hrs ·" not in txt.split("Other work:*")[1].split("\n")[0], "other work listed without hours")
-    check("*Avery Test:* Commission Audit Tool, Spif/Adjustment Process Approval Rehaul · other work: Support Hub" in txt, "one line per person in the summary")
+    check("*Avery Test:* Commission Audit Tool (2–4 weeks left), Spif/Adjustment Process Approval Rehaul (2–4 weeks left) · other work: Support Hub" in txt, "one line per person in the summary")
     check('id="digest"' in html and "Answered rep questions" in html and "Support Hub (other work)" in html, "other work in the report and in Claude impact")
     check(html.count('class="lh next">Next steps') >= 5, "next steps shown per update")
     print("    ", txt.replace("\n", "\n     "))
@@ -289,11 +301,14 @@ def run():
 
     print("csv")
     s, b = call("GET", "/export/updates.csv", auth=ADMIN, raw=True)
-    check(s == 200 and b.startswith("﻿".encode()) and b"Board Deck Automation" in b, "updates CSV")
+    check(s == 200 and b.startswith("﻿".encode()) and b"Board Deck Automation" in b and "Time left".encode() in b, "updates CSV, with time left")
     s, b = call("GET", "/export/tasks.csv", auth=ADMIN, raw=True)
     check(s == 200 and b"Answered rep questions" in b, "other work CSV")
     s, b = call("GET", f"/export/usage.csv?week={w1}", auth=ADMIN, raw=True)
-    check(s == 200 and b.count(b"\n") == 5, "usage CSV filtered to a week (header + 4)")
+    import csv as _csv
+    rows = list(_csv.reader(io.StringIO(b.decode("utf-8-sig"))))
+    check(s == 200 and len(rows) == 5, "usage CSV filtered to a week (header + 4)")
+    check(any("• Auto-build QBR decks — Saves about 2 hrs per QBR\n• Renewal alerts" in c for r in rows for c in r), "usage CSV has the ideas")
 
     print("drafts")
     w8 = (fri + timedelta(days=21)).isoformat()

@@ -73,6 +73,7 @@ try:
         c1 = pg.locator(".proj").nth(0)
         c1.locator(".f-pick").select_option("__new"); c1.locator(".f-new").fill("Pipeline Hygiene")
         c1.locator(".f-type").select_option("Claude")
+        c1.locator(".f-left").select_option("1–2 weeks")
         c1.locator(".f-b").first.fill("Cleaned stale opps")
         c1.locator(".f-n").first.fill("Close out Q4 list")
         check(c1.locator(".f-b").nth(1).is_hidden() and c1.locator(".more").first.is_visible(), "only one progress line until + Add a line")
@@ -84,6 +85,7 @@ try:
         c2.locator(".f-pick").select_option("Board Deck Automation")
         check(c2.locator(".f-type").input_value() == "Claude", "picking a known project fills its type")
         c2.locator(".f-type").select_option("Non-Claude")
+        c2.locator(".f-left").select_option("Ongoing / no end date")
         c2.locator(".f-b").first.fill("Waiting on data")
         c2.locator(".f-n").first.fill("Chase finance")
         pg.click("#add-task")
@@ -92,6 +94,9 @@ try:
         tk.locator(".t-claude").select_option("yes")
         check(tk.locator(".t-saved").is_visible(), "Used Claude shows time saved")
         tk.locator(".t-saved").select_option("Under 1 hr"); tk.locator(".t-note").fill("Two deal reviews")
+        pg.click("#add-idea")
+        pg.locator(".idea .i-idea").last.fill("Auto-build QBR decks"); pg.locator(".idea .i-why").last.fill("Saves 2 hrs per QBR")
+        pg.click("#add-idea")   # a second, left blank: skipped on send
         pg.click("#add")   # a third, left blank: skipped on send
         pg.fill("#retro", "Summarizing the deal desk notes");
         pg.fill("#spend", "75"); pg.fill("#budget", "250"); pg.check("input[name=inc][value=no]")
@@ -104,7 +109,9 @@ try:
         check("Picked up your draft" in (pg.text_content("#state") or ""), "draft noted after reload")
         check(pg.locator(".proj").count() == 3 and pg.locator(".proj").nth(0).locator(".f-new").input_value() == "Pipeline Hygiene"
               and pg.locator(".proj").nth(0).locator(".f-b").nth(1).input_value() == "Merged duplicates", "draft restores the projects")
-        check(pg.locator(".task").count() == 1 and pg.locator(".task .t-saved").input_value() == "Under 1 hr", "draft restores other work")
+        check(pg.locator("#tasks .task").count() == 1 and pg.locator(".task .t-saved").input_value() == "Under 1 hr", "draft restores other work")
+        check(pg.locator(".proj").nth(0).locator(".f-left").input_value() == "1–2 weeks", "draft restores time left")
+        check(pg.locator(".idea").count() == 2 and pg.locator(".idea .i-idea").first.input_value() == "Auto-build QBR decks", "draft restores ideas")
         check(pg.input_value("#retro") == "Summarizing the deal desk notes" and pg.input_value("#spend") == "75"
               and pg.is_checked("input[name=inc][value=no]"), "draft restores retro and usage")
         check("screenshot" in (pg.text_content("#shot-state") or ""), "says to attach the screenshot")
@@ -117,7 +124,9 @@ try:
         pg.screenshot(path=str(OUT / "flow-done.png"), full_page=True)
         pg.click("#edit"); pg.wait_for_timeout(500)
         check(pg.locator(".proj").count() == 2, "Make a change reloads both projects")
-        check(pg.locator(".task").count() >= 1, "Make a change reloads other work")
+        check(pg.locator("#tasks .task").count() >= 1, "Make a change reloads other work")
+        check(pg.locator(".idea").count() == 1 and pg.locator(".proj").nth(1).locator(".f-left").input_value() == "Ongoing / no end date",
+              "Make a change reloads ideas (blank one dropped) and time left")
         ctx.close()
 
         # print layout of the report

@@ -53,7 +53,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .t-err{color:var(--red);font-size:14px;margin-top:8px}
 #tasks:empty+.add-line{margin-top:0}
 .add-line{background:none;border:0;font:inherit;font-weight:600;color:var(--accent);cursor:pointer;padding:6px 0;margin-top:8px}
-#tasks-empty{color:var(--muted);font-size:14px;margin:0 0 4px}
+#tasks-empty,#ideas-empty{color:var(--muted);font-size:14px;margin:0 0 4px}
+.idea .i-why{margin-top:8px}.idea .i-idea{flex:1}
 .note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;margin-bottom:12px}
 .instructions{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-line;margin-bottom:8px}
 .preview{margin-top:8px;max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;display:none}
@@ -105,6 +106,13 @@ button:disabled{opacity:.6;cursor:default}
       <div id="tasks"></div>
       <p id="tasks-empty">Nothing added.</p>
       <button type="button" class="add-line" id="add-task">+ Add other work</button>
+    </div>
+
+    <h2>Upcoming project ideas <span class="opt">Anything you'd like to take on next (optional)</span></h2>
+    <div class="card">
+      <div id="ideas"></div>
+      <p id="ideas-empty">Nothing added.</p>
+      <button type="button" class="add-line" id="add-idea">+ Add an idea</button>
     </div>
 
     <h2>Looking back</h2>
@@ -214,6 +222,7 @@ async function init() {
 
   $('name').onchange = () => { store('wp-name', $('name').value); load(); };
   $('add-task').onclick = () => addTask().querySelector('.t-cat').focus();
+  $('add-idea').onclick = () => addIdea().querySelector('.i-idea').focus();
   $('add').onclick = () => { const c = addCard(); c.querySelector('.f-pick:not([hidden]), .f-new:not([hidden])').focus(); };
   document.querySelectorAll('input[name=inc]').forEach(r => r.onchange = () => { $('inc-wrap').hidden = incValue() !== true; });
   $('shot').onchange = onShot;
@@ -222,7 +231,7 @@ async function init() {
   // drafts: saved a few seconds after any change, or right away with Save draft
   $('form').addEventListener('input', draftSoon);
   $('form').addEventListener('change', draftSoon);
-  $('form').addEventListener('click', e => { if (e.target.closest('.remove, #add, #add-task')) draftSoon(); });
+  $('form').addEventListener('click', e => { if (e.target.closest('.remove, #add, #add-task, #add-idea')) draftSoon(); });
   $('save-draft').onclick = () => saveDraft(true);
   addEventListener('pagehide', () => { if (draftTimer) saveDraft(false, true); });
   load();
@@ -256,6 +265,9 @@ async function load() {
   if (MINE.updates.length || MINE.usage) MINE.tasks.forEach(t => addTask(t));
   else MINE.lastTasks.forEach(t => addTask({category: t.category, claude: t.claude}));   // recurring work carries over
   tasksEmpty();
+  $('ideas').innerHTML = '';
+  (MINE.usage?.ideas || []).forEach(x => addIdea(x));
+  ideasEmpty();
   fillUsage();
   $('send').textContent = MINE.updates.length || MINE.usage ? 'Send updated version' : 'Send weekly update';
   const dr = MINE.draft;
@@ -272,8 +284,8 @@ async function load() {
 
 // ---- drafts: the form as typed, kept on the server until sent ----
 function readForm() {
-  return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('.task')].map(readTask),
-          retro: $('retro').value, spend: $('spend').value, budget: $('budget').value, inc: incValue(),
+  return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('#tasks .task')].map(readTask),
+          ideas: [...document.querySelectorAll('.idea')].map(readIdea), retro: $('retro').value, spend: $('spend').value, budget: $('budget').value, inc: incValue(),
           incAmount: $('inc-amount').value, incStatus: $('inc-status').value, incReason: $('inc-reason').value};
 }
 function applyForm(f) {
@@ -283,6 +295,9 @@ function applyForm(f) {
   $('tasks').innerHTML = '';
   (f.tasks || []).forEach(t => addTask(t));
   tasksEmpty();
+  $('ideas').innerHTML = '';
+  (f.ideas || []).forEach(x => addIdea(x));
+  ideasEmpty();
   $('retro').value = f.retro || '';
   $('spend').value = f.spend ?? ''; $('budget').value = f.budget ?? '';
   document.querySelectorAll('input[name=inc]').forEach(r => r.checked = f.inc !== null && f.inc !== undefined && (r.value === 'yes') === f.inc);
@@ -330,6 +345,9 @@ function addCard(u = {}) {
         <p class="hint newname">Keep it short and use the same name every week, so the report can follow it.</p></div>
       <div><label for="t${id}">Project type</label><select id="t${id}" class="f-type">${options([{value: 'Claude', label: 'Claude project'}, {value: 'Non-Claude', label: 'Non-Claude project'}], 'Choose')}</select></div>
     </div>
+    <div class="row">
+      <div><label for="l${id}">Time left on this project</label><select id="l${id}" class="f-left">${options(CFG.timeLeft, 'Choose')}</select></div>
+    </div>
     <span class="lbl">Progress this week</span>
     ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Another line' : 'What moved this week'}"></textarea></div>`).join('')}
     <button type="button" class="more">+ Add a line</button>
@@ -343,6 +361,7 @@ function addCard(u = {}) {
     else { q('.f-pick').value = '__new'; q('.f-new').value = u.project; }
   }
   q('.f-type').value = u.type || '';
+  q('.f-left').value = u.timeLeft || '';
   el.querySelectorAll('.f-b').forEach((t, i) => t.value = (u.progress || [])[i] || '');
   el.querySelectorAll('.f-n').forEach((t, i) => t.value = (u.nextSteps || [])[i] || '');
   const sync = () => {
@@ -387,6 +406,7 @@ function readCard(el) {
   return {
     project: (isNew ? q('.f-new').value : q('.f-pick').value).trim(),
     type: q('.f-type').value,
+    timeLeft: q('.f-left').value,
     progress: [...el.querySelectorAll('.f-b')].map(t => t.value.trim()).filter(Boolean),
     nextSteps: [...el.querySelectorAll('.f-n')].map(t => t.value.trim()).filter(Boolean),
   };
@@ -396,6 +416,7 @@ function checkCard(el, d) {   // the server's rules, checked here to point at th
   const isNew = !CFG.projects.length || q('.f-pick').value === '__new';
   if (!d.project) bad.push([isNew ? q('.f-new') : q('.f-pick'), 'Choose or name the project.']);
   if (!d.type) bad.push([q('.f-type'), 'Choose the project type.']);
+  if (!d.timeLeft) bad.push([q('.f-left'), 'Choose how much time is left.']);
   if (!d.progress.length) bad.push([q('.f-b'), 'Add at least one line of progress.']);
   if (!d.nextSteps.length) bad.push([q('.f-n'), 'Add at least one next step.']);
   return bad;
@@ -460,6 +481,25 @@ function taskError(el, text, fields = []) {
   const e = el.querySelector('.t-err'); e.textContent = text; e.hidden = !text;
 }
 
+// ---- upcoming project ideas ----
+function addIdea(x = {}) {
+  const el = document.createElement('div');
+  el.className = 'task idea';
+  el.innerHTML = `<div class="foot" style="margin-top:0"><input class="i-idea" maxlength="120" placeholder="The idea, e.g. Auto-build QBR decks" aria-label="Project idea">
+      <button type="button" class="remove" aria-label="Remove this idea">Remove</button></div>
+    <input class="i-why" maxlength="300" placeholder="Why it's worth doing" aria-label="Why it's worth doing">
+    <div class="t-err" hidden></div>`;
+  const q = s => el.querySelector(s);
+  q('.i-idea').value = x.idea || ''; q('.i-why').value = x.why || '';
+  el.addEventListener('input', () => { el.querySelectorAll('.invalid').forEach(i => i.classList.remove('invalid')); q('.t-err').hidden = true; });
+  q('.remove').onclick = () => { el.remove(); ideasEmpty(); };
+  $('ideas').append(el);
+  ideasEmpty();
+  return el;
+}
+function ideasEmpty() { $('ideas-empty').hidden = !!$('ideas').children.length; }
+const readIdea = el => ({idea: el.querySelector('.i-idea').value.trim(), why: el.querySelector('.i-why').value.trim()});
+
 // ---- usage ----
 function incValue() { const r = document.querySelector('input[name=inc]:checked'); return r ? r.value === 'yes' : null; }
 function clearUsage() { document.querySelectorAll('#usage .invalid').forEach(x => x.classList.remove('invalid')); $('usage-err').hidden = true; }
@@ -518,7 +558,7 @@ async function send(ev) {
   ev.preventDefault();
   const cards = [...document.querySelectorAll('.proj')];
   // a blank extra card is skipped rather than blocking the send
-  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.nextSteps.length || d.type; });
+  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.nextSteps.length || d.type || d.timeLeft; });
   let firstBad = null;
   used.forEach(c => {
     const bad = checkCard(c, readCard(c));
@@ -528,11 +568,19 @@ async function send(ev) {
   const names = used.map(c => readCard(c).project.toLowerCase());
   used.forEach((c, i) => { if (names[i] && names.indexOf(names[i]) !== i) { cardError(c, 'This project is already listed above. Combine them into one.'); firstBad = firstBad || c; } });
   // an untouched blank line is skipped
-  const taskEls = [...document.querySelectorAll('.task')].filter(el => { const d = readTask(el); return d.category || d.note || d.claude !== null; });
+  const taskEls = [...document.querySelectorAll('#tasks .task')].filter(el => { const d = readTask(el); return d.category || d.note || d.claude !== null; });
   taskEls.forEach(el => {
     const bad = checkTask(el, readTask(el));
     taskError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
     if (bad.length && !firstBad) firstBad = el;
+  });
+  // ideas: blank ones are skipped; a "why" needs the idea itself
+  const ideaEls = [...document.querySelectorAll('.idea')].filter(el => { const d = readIdea(el); return d.idea || d.why; });
+  ideaEls.forEach(el => {
+    const ok = !!readIdea(el).idea;
+    el.querySelector('.i-idea').classList.toggle('invalid', !ok);
+    taskError(el, ok ? '' : 'Name the idea.');
+    if (!ok && !firstBad) firstBad = el;
   });
   if (!$('retro').value.trim()) {
     $('retro').classList.add('invalid'); $('retro-err').textContent = 'Say where Claude could have helped, or write "Nothing this week".'; $('retro-err').hidden = false;
@@ -546,7 +594,7 @@ async function send(ev) {
 
   const inc = incValue();
   const body = {
-    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), retro: $('retro').value.trim(),
+    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), ideas: ideaEls.map(readIdea), retro: $('retro').value.trim(),
     usage: {spend: num($('spend').value), budget: num($('budget').value), increaseRequested: inc,
             increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
             screenshot: shotData},
@@ -562,6 +610,7 @@ async function send(ev) {
       if (x.retro) { $('retro').classList.add('invalid'); $('retro-err').textContent = x.error; $('retro-err').hidden = false; }
       else if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
       else if (x.task != null && taskEls[x.task]) taskError(taskEls[x.task], x.error);
+      else if (x.idea != null && ideaEls[x.idea]) taskError(ideaEls[x.idea], x.error);
       else if (x.project != null && used[x.project]) cardError(used[x.project], x.error);
     });
     msg(e.message, 'err');
