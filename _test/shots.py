@@ -127,6 +127,10 @@ try:
         check(pg.locator("#tasks .task").count() >= 1, "Make a change reloads other work")
         check(pg.locator(".idea").count() == 1 and pg.locator(".proj").nth(1).locator(".f-left").input_value() == "Ongoing / no end date",
               "Make a change reloads ideas (blank one dropped) and time left")
+        after = (_d.fromisoformat(nxt) + _t(days=7)).isoformat()      # the week after: starts from Drew's projects
+        pg.fill("#week", after); pg.dispatch_event("#week", "change"); pg.wait_for_timeout(600)
+        check(pg.locator(".proj").count() == 2 and pg.locator(".proj").nth(0).locator(".f-left").input_value() == "1–2 weeks"
+              and pg.locator(".proj").nth(0).locator(".f-b").first.input_value() == "", "a new week carries over time left, not progress")
         ctx.close()
 
         # print layout of the report

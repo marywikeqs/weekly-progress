@@ -256,9 +256,9 @@ async function load() {
     st.hidden = false;
   } else {
     const carry = MINE.lastProjects;
-    carry.forEach(u => addCard({project: u.project, type: u.type}));
+    carry.forEach(u => addCard({project: u.project, type: u.type, timeLeft: u.timeLeft}));
     if (!carry.length) addCard();
-    st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one, and remove any you didn't work on this week.` : '';
+    st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one (check the time left), and remove any you didn't work on this week.` : '';
     st.hidden = !carry.length;
   }
   $('tasks').innerHTML = '';
