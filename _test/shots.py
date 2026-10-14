@@ -95,6 +95,20 @@ try:
         pg.click("#add")   # a third, left blank: skipped on send
         pg.fill("#retro", "Summarizing the deal desk notes");
         pg.fill("#spend", "75"); pg.fill("#budget", "250"); pg.check("input[name=inc][value=no]")
+        # draft: autosaves, survives a reload, nothing sent
+        pg.wait_for_timeout(3600)
+        check("Draft saved" in (pg.text_content("#msg") or ""), "autosaves a draft: " + (pg.text_content("#msg") or ""))
+        pg.reload(); pg.wait_for_load_state("networkidle")
+        pg.fill("#week", nxt); pg.dispatch_event("#week", "change"); pg.wait_for_timeout(600)
+        check(pg.input_value("#name") == "Drew Test", "name remembered")
+        check("Picked up your draft" in (pg.text_content("#state") or ""), "draft noted after reload")
+        check(pg.locator(".proj").count() == 3 and pg.locator(".proj").nth(0).locator(".f-new").input_value() == "Pipeline Hygiene"
+              and pg.locator(".proj").nth(0).locator(".f-b").nth(1).input_value() == "Merged duplicates", "draft restores the projects")
+        check(pg.locator(".task").count() == 1 and pg.locator(".task .t-saved").input_value() == "Under 1 hr", "draft restores other work")
+        check(pg.input_value("#retro") == "Summarizing the deal desk notes" and pg.input_value("#spend") == "75"
+              and pg.is_checked("input[name=inc][value=no]"), "draft restores retro and usage")
+        check("screenshot" in (pg.text_content("#shot-state") or ""), "says to attach the screenshot")
+        pg.screenshot(path=str(OUT / "flow-draft.png"), full_page=True)
         pg.set_input_files("#shot", str(OUT / "form-phone-light.png"))
         pg.wait_for_timeout(500)
         pg.screenshot(path=str(OUT / "flow-filled.png"), full_page=True)

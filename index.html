@@ -62,6 +62,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .sendbar .msg{flex:1;font-size:14px;color:var(--muted);min-width:0}
 .sendbar .msg.err{color:var(--red)}.sendbar .msg.ok{color:var(--green)}
 button.primary{font:inherit;font-weight:600;padding:12px 22px;border-radius:8px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);white-space:nowrap}
+button.ghost{font:inherit;font-weight:600;padding:12px 16px;border-radius:8px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);white-space:nowrap}
+button.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.linkish{background:none;border:0;padding:0;font:inherit;color:var(--accent);text-decoration:underline;cursor:pointer}
 button:disabled{opacity:.6;cursor:default}
 .done{text-align:center;padding:28px 18px}
 .done .big{font-size:40px;line-height:1;color:var(--green)}
@@ -72,7 +75,7 @@ button:disabled{opacity:.6;cursor:default}
 .done li .sub{font-size:13px}
 .banner{background:var(--red-soft);color:var(--red);padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:16px}
 [hidden]{display:none!important}
-@media (max-width:560px){.row,.row.wide{grid-template-columns:1fr}}
+@media (max-width:560px){.row,.row.wide{grid-template-columns:1fr}.sendbar .in{flex-wrap:wrap;gap:8px}.sendbar .msg{flex-basis:100%}.sendbar .msg:empty{display:none}.sendbar button{flex:1;padding:11px 12px}}
 </style>
 </head>
 <body>
@@ -139,12 +142,14 @@ button:disabled{opacity:.6;cursor:default}
 
 <div class="sendbar" id="sendbar" hidden><div class="in">
   <div class="msg" id="msg"></div>
+  <button class="ghost" id="save-draft" type="button">Save draft</button>
   <button class="primary" id="send" type="submit" form="form">Send weekly update</button>
 </div></div>
 
 <script>
 const $ = id => document.getElementById(id);
 let CFG = null, MINE = null, shotData = null, cardSeq = 0, lastWeek = null;
+let draftFor = null, draftTimer = null, loading = false, sending = false;
 
 // ---- helpers ----
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -214,18 +219,26 @@ async function init() {
   $('shot').onchange = onShot;
   $('form').onsubmit = send;
   $('form').addEventListener('input', () => { if ($('msg').classList.contains('err')) msg(''); });
+  // drafts: saved a few seconds after any change, or right away with Save draft
+  $('form').addEventListener('input', draftSoon);
+  $('form').addEventListener('change', draftSoon);
+  $('form').addEventListener('click', e => { if (e.target.closest('.remove, #add, #add-task')) draftSoon(); });
+  $('save-draft').onclick = () => saveDraft(true);
+  addEventListener('pagehide', () => { if (draftTimer) saveDraft(false, true); });
   load();
 }
 
 // ---- load what this person has for the week ----
 async function load() {
+  if (draftTimer) await saveDraft();       // keep what was typed before switching name or week
+  draftFor = null; loading = true;
   $('done').hidden = true;
   const name = $('name').value, week = $('week').value;
   $('form').hidden = $('sendbar').hidden = !name;
-  if (!name) return;
+  if (!name) { loading = false; return; }
   msg('');
   try { MINE = await api(`/api/mine?name=${encodeURIComponent(name)}&week=${week}`); }
-  catch (e) { msg(e.message, 'err'); return; }
+  catch (e) { msg(e.message, 'err'); loading = false; return; }
   $('projects').innerHTML = ''; cardSeq = 0;
   const st = $('state');
   if (MINE.updates.length) {
@@ -245,6 +258,61 @@ async function load() {
   tasksEmpty();
   fillUsage();
   $('send').textContent = MINE.updates.length || MINE.usage ? 'Send updated version' : 'Send weekly update';
+  const dr = MINE.draft;
+  if (dr && (!MINE.usage || dr.savedAt > MINE.usage.updatedAt)) {
+    applyForm(dr.form);
+    st.innerHTML = `${esc(MINE.usage ? 'You have unsent changes' : 'Picked up your draft')} from ${esc(new Date(dr.savedAt).toLocaleString())}. Nothing is sent until you press Send.
+      <button type="button" class="linkish" id="discard">Discard draft</button>`;
+    st.hidden = false;
+    $('discard').onclick = discardDraft;
+  }
+  draftFor = {name, week};
+  requestAnimationFrame(() => { loading = false; });
+}
+
+// ---- drafts: the form as typed, kept on the server until sent ----
+function readForm() {
+  return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('.task')].map(readTask),
+          retro: $('retro').value, spend: $('spend').value, budget: $('budget').value, inc: incValue(),
+          incAmount: $('inc-amount').value, incStatus: $('inc-status').value, incReason: $('inc-reason').value};
+}
+function applyForm(f) {
+  $('projects').innerHTML = ''; cardSeq = 0;
+  (f.projects || []).forEach(u => addCard(u));
+  if (!$('projects').children.length) addCard();
+  $('tasks').innerHTML = '';
+  (f.tasks || []).forEach(t => addTask(t));
+  tasksEmpty();
+  $('retro').value = f.retro || '';
+  $('spend').value = f.spend ?? ''; $('budget').value = f.budget ?? '';
+  document.querySelectorAll('input[name=inc]').forEach(r => r.checked = f.inc !== null && f.inc !== undefined && (r.value === 'yes') === f.inc);
+  $('inc-wrap').hidden = f.inc !== true;
+  $('inc-amount').value = f.incAmount || ''; $('inc-status').value = f.incStatus || ''; $('inc-reason').value = f.incReason || '';
+  if (!MINE.usage) $('shot-state').textContent = "Drafts don't keep the screenshot. Attach it before you send.";
+}
+function draftSoon() {
+  if (loading || sending || !draftFor) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => saveDraft(), 3000);
+}
+async function saveDraft(byHand = false, leaving = false) {
+  clearTimeout(draftTimer); draftTimer = null;
+  if (!draftFor || sending) return;
+  const body = JSON.stringify({...draftFor, form: readForm()});
+  if (leaving) { fetch('/api/draft', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body, keepalive: true}); return; }
+  try {
+    const r = await api('/api/draft', {method: 'PUT', body});
+    if (MINE && draftFor && r.draft.name === $('name').value && r.draft.week === $('week').value) MINE.draft = r.draft;
+    if (!$('msg').classList.contains('err') || byHand)
+      msg(`Draft saved ${new Date(r.draft.savedAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}${shotData ? " (the screenshot isn't kept in drafts)" : ''}`, 'ok');
+  } catch (e) { if (byHand) msg('Draft not saved: ' + e.message, 'err'); }
+}
+async function discardDraft() {
+  clearTimeout(draftTimer); draftTimer = null;
+  try { await api(`/api/draft?name=${encodeURIComponent($('name').value)}&week=${$('week').value}`, {method: 'DELETE'}); }
+  catch (e) { msg("Couldn't discard the draft: " + e.message, 'err'); return; }
+  msg('Draft discarded.');
+  load();
 }
 
 // ---- project cards ----
@@ -484,6 +552,7 @@ async function send(ev) {
             screenshot: shotData},
   };
   const btn = $('send'); btn.disabled = true; msg('Sending…');
+  clearTimeout(draftTimer); draftTimer = null; sending = true;
   try {
     const r = await api('/api/submit', {method: 'POST', body: JSON.stringify(body)});
     try { const c = await api('/api/config'); CFG.projects = c.projects; CFG.taskCategories = c.taskCategories; } catch (e) {}
@@ -497,7 +566,7 @@ async function send(ev) {
     });
     msg(e.message, 'err');
   }
-  btn.disabled = false;
+  btn.disabled = false; sending = false;
 }
 
 function showDone(r) {

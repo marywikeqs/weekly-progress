@@ -125,6 +125,7 @@ def load() -> None:
     DATA["usage"] = _read("usage.json", [])
     DATA["tasks"] = _read("tasks.json", [])      # other work: Support Hub, Deal Desk, ...
     DATA["sent"] = _read("sent.json", {})      # week -> when the report email went out
+    DATA["drafts"] = _read("drafts.json", {})  # "name|week" -> the form as last saved; never in the report
 
 
 def write(key: str) -> bool:
@@ -552,10 +553,11 @@ class Handler(BaseHTTPRequestHandler):
                 prev = [u for u in DATA["updates"] if u["name"] == name and u["week"] == prev_week]
                 tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == week]
                 prev_tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == prev_week]
+                draft = DATA["drafts"].get(f"{name}|{week}")
             # A new week starts from last week's projects, other work and budget.
             return self.send_json(200, {"updates": ups, "usage": use, "tasks": tasks,
                                         "lastBudget": earlier[-1]["budget"] if earlier else None,
-                                        "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks})
+                                        "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft})
 
         # admin only from here
         if path in ("/admin", "/admin.html"):
@@ -711,6 +713,8 @@ class Handler(BaseHTTPRequestHandler):
                 DATA["updates"], DATA["usage"], DATA["tasks"] = before_updates, before_usage, before_tasks
                 return self.unsaved()
             log_change("update" if cur_use else "create", "usage", cur_use, rec_use)
+            if DATA["drafts"].pop(f"{name}|{week}", None) is not None:
+                write("drafts")
         MAIL_KICK.set()       # everyone in? the email goes now
         return self.send_json(200, {"updates": saved, "tasks": saved_tasks, "usage": rec_use, "resent": bool(cur_use)})
 
@@ -730,8 +734,37 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(502, {"error": detail})
         self.send_json(200, {"sent": True, "to": to, "week": r["week"]})
 
+    def draft(self, method: str):
+        """Save (PUT) or discard (DELETE) a person's unsent form for a week. The
+        form is kept as typed, unchecked; it only becomes an update when sent."""
+        if not self.gate("team"):
+            return
+        if method == "PUT":
+            body = self.read_json() or {}
+            name, week, form = str(body.get("name", "")), body.get("week"), body.get("form")
+        else:
+            q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+            name, week, form = q.get("name", ""), q.get("week"), None
+        with LOCK:
+            if name not in {p["name"] for p in DATA["config"]["roster"]} or not is_friday(week):
+                return self.send_json(400, {"error": "Pick your name and the week first."})
+            if method == "PUT" and not isinstance(form, dict):
+                return self.send_json(400, {"error": "Nothing to save."})
+            key, before = f"{name}|{week}", DATA["drafts"]
+            DATA["drafts"] = {k: v for k, v in DATA["drafts"].items() if k != key}
+            rec = None
+            if method == "PUT":
+                rec = {"name": name, "week": week, "form": form, "savedAt": now()}
+                DATA["drafts"][key] = rec
+            if not write("drafts"):
+                DATA["drafts"] = before
+                return self.unsaved()
+        self.send_json(200, {"draft": rec})
+
     def do_DELETE(self):
         """Admin: remove one person's whole send for a week (projects, other work, usage, screenshot)."""
+        if urlsplit(self.path).path == "/api/draft":
+            return self.draft("DELETE")
         if urlsplit(self.path).path != "/api/admin/send":
             return self.send_json(404, {"error": "Not found"})
         if not self.gate("admin"):
@@ -755,6 +788,8 @@ class Handler(BaseHTTPRequestHandler):
                     DATA[k] = v
                 return self.unsaved()
             log_change("delete", "send", gone, None)
+            if DATA["drafts"].pop(f"{name}|{week}", None) is not None:
+                write("drafts")
             shots = {r.get("screenshot") for r in gone["usage"]} - {r.get("screenshot") for r in DATA["usage"]} - {None, ""}
             for f in shots:
                 try:
@@ -764,6 +799,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"deleted": {k: len(v) for k, v in gone.items()}, "unsent": empty and week in before["sent"]})
 
     def do_PUT(self):
+        if urlsplit(self.path).path == "/api/draft":
+            return self.draft("PUT")
         if urlsplit(self.path).path != "/api/admin/config":
             return self.send_json(404, {"error": "Not found"})
         if not self.gate("admin"):

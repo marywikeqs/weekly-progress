@@ -295,6 +295,26 @@ def run():
     s, b = call("GET", f"/export/usage.csv?week={w1}", auth=ADMIN, raw=True)
     check(s == 200 and b.count(b"\n") == 5, "usage CSV filtered to a week (header + 4)")
 
+    print("drafts")
+    w8 = (fri + timedelta(days=21)).isoformat()
+    form = {"projects": [{"project": "Draft project", "type": "Claude", "progress": ["Half done"], "nextSteps": []}], "tasks": [], "retro": "", "spend": "12", "budget": "", "inc": None}
+    check(call("PUT", "/api/draft", {"name": "Nobody", "week": w8, "form": form})[0] == 400, "draft needs a roster name")
+    check(call("PUT", "/api/draft", {"name": "Drew Test", "week": w8, "form": form}, auth=None)[0] == 401, "draft needs sign-in")
+    s, d = call("PUT", "/api/draft", {"name": "Drew Test", "week": w8, "form": form})
+    check(s == 200 and d["draft"]["savedAt"], "team saves a half-done draft (no checks)")
+    mine = call("GET", f"/api/mine?name=Drew%20Test&week={w8}")[1]
+    check(mine["draft"]["form"]["projects"][0]["project"] == "Draft project" and not mine["updates"] and mine["usage"] is None, "draft comes back, nothing sent")
+    s, txt = call("GET", f"/report.txt?week={w8}", auth=ADMIN, raw=True)
+    check(b"Draft project" not in txt, "drafts never reach the report")
+    check(call("GET", f"/api/mine?name=Casey%20Test&week={w8}")[1]["draft"] is None, "drafts are per person")
+    check(call("DELETE", f"/api/draft?name=Drew%20Test&week={w8}")[0] == 200 and call("GET", f"/api/mine?name=Drew%20Test&week={w8}")[1]["draft"] is None, "discard a draft")
+    call("PUT", "/api/draft", {"name": "Drew Test", "week": w8, "form": form})
+    s, d = send("Drew Test", w8, [proj("Draft project", "Claude", "", ["Done"])], use)
+    check(s == 200 and call("GET", f"/api/mine?name=Drew%20Test&week={w8}")[1]["draft"] is None, "sending clears the draft")
+    call("PUT", "/api/draft", {"name": "Drew Test", "week": w8, "form": form})
+    call("DELETE", f"/api/admin/send?name=Drew%20Test&week={w8}", auth=ADMIN)
+    check(call("GET", f"/api/mine?name=Drew%20Test&week={w8}")[1]["draft"] is None, "deleting a send clears its draft too")
+
     print("delete a send")
     w9 = (fri + timedelta(days=14)).isoformat()
     s, d = send("Casey Test", w9, [proj("Test project", "Claude", "", ["Test"])], use)
@@ -314,7 +334,7 @@ def run():
 
     print("persistence")
     files = sorted(p.name for p in (OUT / "state").iterdir())
-    check(files == ["changes.jsonl", "config.json", "screenshots", "sent.json", "tasks.json", "updates.json", "usage.json"], f"state files: {files}")
+    check(files == ["changes.jsonl", "config.json", "drafts.json", "screenshots", "sent.json", "tasks.json", "updates.json", "usage.json"], f"state files: {files}")
 
 
 if __name__ == "__main__":
