@@ -45,6 +45,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .proj-head h3{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
 .remove{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;cursor:pointer;padding:4px 6px}
 .remove:hover{color:var(--red)}
+.hbtn{background:none;border:0;color:var(--accent);font:inherit;font-size:14px;font-weight:600;cursor:pointer;padding:4px 6px}
+/* a finished project folds down to one summary line */
+.proj.closed .proj-head{margin-bottom:6px}
+.proj-sum{display:block;width:100%;text-align:left;background:none;border:0;padding:0;font:inherit;color:var(--ink);cursor:pointer}
+.proj-sum strong{display:block;font-size:16px}
+.proj-sum .meta{display:block;color:var(--muted);font-size:14px;margin-top:2px}
+.proj-sum .first{display:block;color:var(--muted);font-size:14px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-foot{display:flex;justify-content:flex-end;margin-top:14px}
+.done-btn{font:inherit;font-weight:600;font-size:14px;padding:8px 14px;border-radius:8px;cursor:pointer;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent)}
 .f-pick:not([hidden])+.f-new{margin-top:8px}
 .card-err{color:var(--red);font-size:14px;margin-top:10px}
 .add{width:100%;font:inherit;font-weight:600;padding:12px;border:1.5px dashed var(--line);border-radius:12px;background:none;color:var(--accent);cursor:pointer}
@@ -229,7 +238,7 @@ async function init() {
   $('name').onchange = () => { store('wp-name', $('name').value); load(); };
   $('add-task').onclick = () => addTask().querySelector('.t-cat').focus();
   $('add-idea').onclick = () => addIdea().querySelector('.i-idea').focus();
-  $('add').onclick = () => { const c = addCard(); c.querySelector('.f-pick:not([hidden]), .f-new:not([hidden])').focus(); };
+  $('add').onclick = () => { foldFinished(); const c = addCard(); c.querySelector('.f-pick:not([hidden]), .f-new:not([hidden])').focus(); };
   document.querySelectorAll('input[name=inc]').forEach(r => r.onchange = () => { $('inc-wrap').hidden = incValue() !== true; });
   $('shot').onchange = onShot;
   $('form').onsubmit = send;
@@ -258,6 +267,7 @@ async function load() {
   const st = $('state');
   if (MINE.updates.length) {
     MINE.updates.forEach(u => addCard(u));
+    foldFinished();
     st.textContent = `You sent this week's update on ${new Date(MINE.usage?.updatedAt || MINE.updates[0].updatedAt).toLocaleString()}. Change anything and send again. Removing a project here removes it from your update.`;
     st.hidden = false;
   } else {
@@ -298,6 +308,7 @@ function applyForm(f) {
   $('projects').innerHTML = ''; cardSeq = 0;
   (f.projects || []).forEach(u => addCard(u));
   if (!$('projects').children.length) addCard();
+  foldFinished();
   $('tasks').innerHTML = '';
   (f.tasks || []).forEach(t => addTask(t));
   tasksEmpty();
@@ -343,7 +354,9 @@ function addCard(u = {}) {
   const known = !u.project || CFG.projects.some(p => p.name.toLowerCase() === u.project.toLowerCase());
   const learned = CFG.projects.length > 0;
   el.innerHTML = `
-    <div class="proj-head"><h3>Project</h3><button type="button" class="remove">Remove</button></div>
+    <div class="proj-head"><h3>Project</h3><span><button type="button" class="hbtn f-toggle" hidden>Edit</button><button type="button" class="remove">Remove</button></span></div>
+    <button type="button" class="proj-sum" hidden aria-label="Edit this project"></button>
+    <div class="proj-body">
     <div class="row wide">
       <div><label for="p${id}">Project</label>
         <select id="p${id}" class="f-pick"${learned ? '' : ' hidden'}>${options([...CFG.projects.map(p => p.name), {value: '__new', label: 'New project…'}], 'Choose a project')}</select>
@@ -366,7 +379,9 @@ function addCard(u = {}) {
     <span class="lbl">Next steps</span>
     ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Another line' : 'What\'s next'}"></textarea>${i ? '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>' : ''}</div>`).join('')}
     <button type="button" class="more">+ Add a line</button>
-    <div class="card-err" hidden></div>`;
+    <div class="card-err" hidden></div>
+    <div class="proj-foot"><button type="button" class="done-btn">Done, collapse ▴</button></div>
+    </div>`;
   const q = s => el.querySelector(s);
   if (u.project) {
     if (known) q('.f-pick').value = CFG.projects.find(p => p.name.toLowerCase() === u.project.toLowerCase()).name;
@@ -413,6 +428,15 @@ function addCard(u = {}) {
     fit();
   });
   q('.remove').onclick = () => { el.remove(); renumber(); };
+  // Done folds a finished project to a summary line; Edit (or the summary) opens it again
+  q('.done-btn').onclick = () => {
+    const bad = checkCard(el, readCard(el));
+    cardError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
+    if (bad.length) return;
+    fold(el, true);
+    if (el.getBoundingClientRect().top < 0) el.scrollIntoView({behavior: 'smooth', block: 'start'});
+  };
+  q('.f-toggle').onclick = q('.proj-sum').onclick = () => fold(el, false);
   const clear = () => { el.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid')); q('.card-err').hidden = true; };
   el.addEventListener('input', clear);
   el.addEventListener('change', clear);
@@ -421,6 +445,24 @@ function addCard(u = {}) {
   renumber();
   return el;
 }
+function fold(el, shut) {
+  const q = s => el.querySelector(s);
+  if (shut) {
+    const d = readCard(el);
+    const who = d.solo ? '👤 Solo' : '👥 With ' + d.with.join(', ');
+    const n = (k, one) => `${k} ${one}${k === 1 ? '' : 's'}`;
+    q('.proj-sum').innerHTML = `<strong>${esc(d.project)}</strong>
+      <span class="meta">${esc(d.type)} project · ⏳ ${esc(d.timeLeft)}${/^Ongoing/.test(d.timeLeft) ? '' : ' left'} · ${esc(who)}</span>
+      <span class="first">${esc(d.progress[0] || '')}</span>
+      <span class="meta">${n(d.progress.length, 'progress line')} · ${n(d.nextSteps.length, 'next step')}</span>`;
+  }
+  el.classList.toggle('closed', shut);
+  q('.proj-body').hidden = shut;
+  q('.proj-sum').hidden = q('.f-toggle').hidden = !shut;
+  if (!shut) el.querySelectorAll('.f-b, .f-n').forEach(t => { if (t.offsetParent) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; } });
+}
+// cards that already pass the checks start folded (a sent week, a draft); unfinished ones stay open
+function foldFinished() { document.querySelectorAll('.proj').forEach(c => { if (!checkCard(c, readCard(c)).length) fold(c, true); }); }
 function renumber() {
   const cards = [...document.querySelectorAll('.proj')];
   cards.forEach((c, i) => { c.querySelector('.remove').hidden = cards.length === 1; c.querySelector('h3').textContent = `Project ${i + 1}`; });
@@ -453,6 +495,7 @@ function checkCard(el, d) {   // the server's rules, checked here to point at th
   return bad;
 }
 function cardError(el, text, fields = []) {
+  if (text) fold(el, false);
   fields.forEach(f => f.classList.add('invalid'));
   const e = el.querySelector('.card-err'); e.textContent = text; e.hidden = !text;
 }
