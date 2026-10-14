@@ -295,6 +295,23 @@ def run():
     s, b = call("GET", f"/export/usage.csv?week={w1}", auth=ADMIN, raw=True)
     check(s == 200 and b.count(b"\n") == 5, "usage CSV filtered to a week (header + 4)")
 
+    print("delete a send")
+    w9 = (fri + timedelta(days=14)).isoformat()
+    s, d = send("Casey Test", w9, [proj("Test project", "Claude", "", ["Test"])], use)
+    check(s == 200, "a test send for a later week")
+    tshot = d["usage"]["screenshot"]
+    sends = call("GET", "/api/admin", auth=ADMIN)[1]["sends"]
+    check(sends[0]["week"] == w9 and sends[0]["name"] == "Casey Test" and sends[0]["projects"] == ["Test project"], "admin lists sends, newest week first")
+    check(len({(x["week"], x["name"]) for x in sends}) == len(sends) and any(x["week"] == w1 and x["tasks"] for x in sends), "one row per person per week, with other work counted")
+    check(call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}")[0] == 401, "team can't delete")
+    s, d = call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}", auth=ADMIN)
+    check(s == 200 and d["deleted"] == {"updates": 1, "tasks": 0, "usage": 1}, "admin deletes the whole send")
+    mine = call("GET", f"/api/mine?name=Casey%20Test&week={w9}")[1]
+    check(not mine["updates"] and mine["usage"] is None, "...and it's gone from the form")
+    check(not (OUT / "state" / "screenshots" / tshot).exists(), "...and its screenshot file")
+    check(call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}", auth=ADMIN)[0] == 404, "deleting again: nothing there")
+    check(call("GET", f"/api/mine?name=Casey%20Test&week={w1}")[1]["updates"], "other weeks untouched")
+
     print("persistence")
     files = sorted(p.name for p in (OUT / "state").iterdir())
     check(files == ["changes.jsonl", "config.json", "screenshots", "sent.json", "tasks.json", "updates.json", "usage.json"], f"state files: {files}")

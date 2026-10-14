@@ -64,7 +64,7 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <a href="/report">Weekly report</a>
   <a href="/">The form</a>
   <div class="sep"></div>
-  <a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a>
+  <a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#sends">Sends</a>
   <div class="sep"></div>
   <a href="/export/updates.csv">All project updates (CSV)</a><a href="/export/tasks.csv">All other work (CSV)</a><a href="/export/usage.csv">All usage (CSV)</a>
 </aside>
@@ -78,7 +78,7 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <button class="add" id="add-person"><span>+</span>Add person</button>
 
   <h2 id="email">Report email</h2>
-  <p class="hint">The report is emailed once a week: as soon as everyone on the roster has sent their update, or on Monday at 9 AM with whoever is in if someone is still missing. Separate several addresses with commas.</p>
+  <p class="hint">The report is emailed once a week: as soon as everyone on the roster has sent their update. Changes sent after that don't send it again. Separate several addresses with commas.</p>
   <div class="emailrow"><input type="email" id="report-email" multiple placeholder="name@quiltsoftware.com" aria-label="Email the report to">
     <button class="ghost" id="test-email" type="button">Send a test email</button></div>
   <div class="status-line" id="email-status"></div>
@@ -101,6 +101,11 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <h2 id="howto">Screenshot instructions</h2>
   <p class="hint">Shown above the screenshot upload. Name the screen and the date range so everyone's screenshots match.</p>
   <textarea id="howto-text" maxlength="2000"></textarea>
+
+  <h2 id="sends">Sends</h2>
+  <p class="hint">Every update sent, newest week first. Delete removes that person's whole send for the week (projects, other work, usage and screenshot), for test sends or mistakes. It can't be undone. To change a send instead, open the form, pick the name and week, edit and send again.</p>
+  <ul class="learned" id="send-list"></ul>
+  <p class="hint" id="sends-empty" hidden>Nothing sent yet.</p>
 </main>
 </div>
 <div class="bar"><span class="status" id="status">Loading…</span><button class="primary" id="save">Save changes</button></div>
@@ -118,7 +123,7 @@ async function load() {
   state = d.config; learned = d.learned; email = d.email;
   $('howto-text').value = state.screenshotInstructions || '';
   $('report-email').value = state.reportEmail || '';
-  render(); renderEmail();
+  render(); renderEmail(); renderSends(d.sends || []);
   if (!d.writable) setStatus('The server can\'t save: its storage isn\'t writable', 'err');
   else if (!d.persistent) setStatus('No volume attached: everything resets on the next deploy', 'err');
   else setStatus('All changes saved');
@@ -172,6 +177,29 @@ function render() {
 $('add-person').onclick = () => { state.roster.push({name: '', active: true}); render(); const ins = $('roster-list').querySelectorAll('input[type=text]'); ins[ins.length - 1].focus(); };
 $('add-project').onclick = () => { state.projects.push({name: '', type: '', active: true}); render(); const ins = $('project-list').querySelectorAll('input[type=text]'); ins[ins.length - 1].focus(); };
 $('add-cat').onclick = () => { state.taskCategories.push(''); render(); const ins = $('cat-list').querySelectorAll('input[type=text]'); ins[ins.length - 1].focus(); };
+function renderSends(sends) {
+  $('sends-empty').hidden = sends.length > 0;
+  $('send-list').innerHTML = sends.map((x, i) => `<li><div class="grow"><strong>${esc(x.name)}</strong> · week ending ${esc(fmtWeek(x.week))}
+    <small>${esc(x.projects.join(' · ') || 'No projects')}${x.tasks ? ` · ${x.tasks} other work` : ''}${x.at ? ` · sent ${esc(new Date(x.at).toLocaleString())}` : ''}</small></div>
+    <button class="ghost" type="button" data-i="${i}">Delete</button></li>`).join('');
+  $('send-list').querySelectorAll('button').forEach(b => b.onclick = async () => {
+    const x = sends[b.dataset.i];
+    if (b.dataset.armed !== '1') {      // two clicks: no browser dialogs
+      b.dataset.armed = '1'; b.textContent = 'Click again to delete'; b.style.color = 'var(--p1)'; b.style.borderColor = 'var(--p1)';
+      setTimeout(() => { if (b.isConnected && b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = 'Delete'; b.style.color = b.style.borderColor = ''; } }, 4000);
+      return;
+    }
+    b.disabled = true; b.textContent = 'Deleting…';
+    try {
+      const r = await fetch(`/api/admin/send?name=${encodeURIComponent(x.name)}&week=${x.week}`, {method: 'DELETE'});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      const fresh = await (await fetch('/api/admin')).json();
+      email = fresh.email; renderEmail(); renderSends(fresh.sends || []);
+      if (!dirty) setStatus(`Deleted ${x.name}'s send for the week ending ${fmtWeek(x.week)}`, 'ok');
+    } catch (e) { b.disabled = false; b.textContent = 'Delete'; setStatus('Not deleted: ' + e.message, 'err'); }
+  });
+}
 $('howto-text').oninput = () => { state.screenshotInstructions = $('howto-text').value; touch(); };
 $('report-email').oninput = () => { state.reportEmail = $('report-email').value; touch(); };
 $('save').onclick = async () => {

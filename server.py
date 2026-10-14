@@ -573,7 +573,17 @@ class Handler(BaseHTTPRequestHandler):
                         o["last"] = max(o["last"], u["week"])
                 email = {"configured": mailer.configured(), "from": mailer.FROM, "timezone": mailer.TZ_NAME,
                          "sent": DATA["sent"], "error": MAIL_ERROR["error"], "errorAt": MAIL_ERROR["at"]}
-                return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()), "email": email,
+                sends = {}
+                for k in ("updates", "tasks", "usage"):
+                    for x in DATA[k]:
+                        o = sends.setdefault((x["week"], x["name"]), {"week": x["week"], "name": x["name"], "projects": [], "tasks": 0, "at": ""})
+                        if k == "updates":
+                            o["projects"].append(x["project"])
+                        elif k == "tasks":
+                            o["tasks"] += 1
+                        o["at"] = max(o["at"], x.get("updatedAt") or x.get("submittedAt") or "")
+                sends = sorted(sends.values(), key=lambda o: (o["week"], o["at"]), reverse=True)
+                return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()), "email": email, "sends": sends,
                                             "weeks": report.weeks_with_data(DATA), "writable": WRITABLE, "persistent": state_persistent()})
         if path in ("/report", "/report.txt"):
             if not self.gate("admin"):
@@ -719,6 +729,39 @@ class Handler(BaseHTTPRequestHandler):
         if not ok:
             return self.send_json(502, {"error": detail})
         self.send_json(200, {"sent": True, "to": to, "week": r["week"]})
+
+    def do_DELETE(self):
+        """Admin: remove one person's whole send for a week (projects, other work, usage, screenshot)."""
+        if urlsplit(self.path).path != "/api/admin/send":
+            return self.send_json(404, {"error": "Not found"})
+        if not self.gate("admin"):
+            return
+        q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+        name, week = q.get("name", ""), q.get("week", "")
+        mine = lambda r: r["name"] == name and r["week"] == week
+        with LOCK:
+            gone = {k: [r for r in DATA[k] if mine(r)] for k in ("updates", "tasks", "usage")}
+            if not any(gone.values()):
+                return self.send_json(404, {"error": f"Nothing sent by {name} for that week."})
+            before = {k: DATA[k] for k in ("updates", "tasks", "usage", "sent")}
+            for k in ("updates", "tasks", "usage"):
+                DATA[k] = [r for r in DATA[k] if not mine(r)]
+            # a week left with no sends at all (a test week) can be emailed again later
+            empty = not any(r["week"] == week for k in ("updates", "tasks", "usage") for r in DATA[k])
+            if empty and week in DATA["sent"]:
+                DATA["sent"] = {w: v for w, v in DATA["sent"].items() if w != week}
+            if not (write("updates") and write("tasks") and write("usage") and write("sent")):
+                for k, v in before.items():
+                    DATA[k] = v
+                return self.unsaved()
+            log_change("delete", "send", gone, None)
+            shots = {r.get("screenshot") for r in gone["usage"]} - {r.get("screenshot") for r in DATA["usage"]} - {None, ""}
+            for f in shots:
+                try:
+                    (SHOTS / f).unlink()
+                except OSError:
+                    pass
+        self.send_json(200, {"deleted": {k: len(v) for k, v in gone.items()}, "unsent": empty and week in before["sent"]})
 
     def do_PUT(self):
         if urlsplit(self.path).path != "/api/admin/config":
