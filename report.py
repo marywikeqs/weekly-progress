@@ -14,7 +14,7 @@ from html import escape
 
 # Time-saved ranges counted at their midpoints.
 TIME_SAVED_HOURS = {"None": 0, "Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5+ hrs": 6}
-TIME_LEFT = ["Wrapping up this week", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date"]
+TIME_LEFT = ["1–2 days", "3–5 days", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date"]
 FLAG_AT = 80  # percent of budget
 
 
@@ -346,6 +346,13 @@ h2{break-after:avoid}.row{break-inside:avoid}.gallery{grid-template-columns:repe
 """
 
 
+def team(u: dict) -> str:
+    """'Solo', 'With Cora Gadd, Finance', or '' for updates sent before this was asked."""
+    if u.get("solo"):
+        return "Solo"
+    return "With " + ", ".join(u["with"]) if u.get("with") else ""
+
+
 def time_left(t: str) -> str:
     """'2–4 weeks' -> '2–4 weeks left'; the end-state options read as they are."""
     return t if t.startswith(("Wrapping", "Ongoing")) else t + " left"
@@ -456,7 +463,8 @@ def render_html(r: dict, weeks: list) -> str:
             o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
                      f'<div class="top"><strong>{escape(u["project"])}</strong>{_label(u["type"])}'
                      + (_pill("New this week", GREEN) if u["new"] else "")
-                     + (f'<span class="tleft">⏳ {escape(time_left(u["timeLeft"]))}</span>' if u.get("timeLeft") else "") + "</div>"
+                     + (f'<span class="tleft">⏳ {escape(time_left(u["timeLeft"]))}</span>' if u.get("timeLeft") else "")
+                     + (f'<span class="tleft">{"👤" if u.get("solo") else "👥"} {escape(team(u))}</span>' if team(u) else "") + "</div>"
                      + '<div class="lh prog">Progress</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
                      + ('<div class="lh next">Next steps</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div class="meta">{meta}</div>' if meta else "") + "</div></div>")

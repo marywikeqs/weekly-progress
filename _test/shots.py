@@ -73,19 +73,30 @@ try:
         c1 = pg.locator(".proj").nth(0)
         c1.locator(".f-pick").select_option("__new"); c1.locator(".f-new").fill("Pipeline Hygiene")
         c1.locator(".f-type").select_option("Claude")
-        c1.locator(".f-left").select_option("1–2 weeks")
+        c1.locator(".f-left").select_option("3–5 days")
+        c1.locator(".f-solo input[value=solo]").check()
+        check(c1.locator(".f-team").is_hidden(), "solo: no teammate picker")
         c1.locator(".f-b").first.fill("Cleaned stale opps")
         c1.locator(".f-n").first.fill("Close out Q4 list")
         check(c1.locator(".f-b").nth(1).is_hidden() and c1.locator(".more").first.is_visible(), "only one progress line until + Add a line")
         c1.locator(".more").first.click(); c1.locator(".f-b").nth(1).fill("Merged duplicates")
         c1.locator(".more").first.click()
         check(c1.locator(".f-b").nth(2).is_visible() and c1.locator(".more").first.is_hidden(), "third line shown, + Add a line gone at three")
+        c1.locator(".f-b").nth(2).fill("Third line")
+        c1.locator(".bullet").nth(1).locator(".x-line").click()     # remove line 2: line 3 moves up
+        check(c1.locator(".f-b").nth(1).input_value() == "Third line" and c1.locator(".f-b").nth(2).is_hidden()
+              and c1.locator(".more").first.is_visible(), "x removes an extra line, the rest move up")
+        check(c1.locator(".bullet").first.locator(".x-line").count() == 0, "the first line can't be removed")
+        c1.locator(".f-b").nth(1).fill("Merged duplicates")
         pg.click("#add")
         c2 = pg.locator(".proj").nth(1)
         c2.locator(".f-pick").select_option("Board Deck Automation")
         check(c2.locator(".f-type").input_value() == "Claude", "picking a known project fills its type")
         c2.locator(".f-type").select_option("Non-Claude")
         c2.locator(".f-left").select_option("Ongoing / no end date")
+        c2.locator(".f-solo input[value=team]").check()
+        check(c2.locator(".f-team").is_visible() and c2.locator(".chips input[value='Drew Test']").count() == 0, "with others: roster to pick from, minus yourself")
+        c2.locator(".chips input[value='Casey Test']").check(); c2.locator(".f-others").fill("Finance team")
         c2.locator(".f-b").first.fill("Waiting on data")
         c2.locator(".f-n").first.fill("Chase finance")
         pg.click("#add-task")
@@ -110,7 +121,9 @@ try:
         check(pg.locator(".proj").count() == 3 and pg.locator(".proj").nth(0).locator(".f-new").input_value() == "Pipeline Hygiene"
               and pg.locator(".proj").nth(0).locator(".f-b").nth(1).input_value() == "Merged duplicates", "draft restores the projects")
         check(pg.locator("#tasks .task").count() == 1 and pg.locator(".task .t-saved").input_value() == "Under 1 hr", "draft restores other work")
-        check(pg.locator(".proj").nth(0).locator(".f-left").input_value() == "1–2 weeks", "draft restores time left")
+        check(pg.locator(".proj").nth(0).locator(".f-left").input_value() == "3–5 days", "draft restores time left")
+        check(pg.locator(".proj").nth(1).locator(".chips input[value='Casey Test']").is_checked()
+              and pg.locator(".proj").nth(1).locator(".f-others").input_value() == "Finance team", "draft restores who's working on it")
         check(pg.locator(".idea").count() == 2 and pg.locator(".idea .i-idea").first.input_value() == "Auto-build QBR decks", "draft restores ideas")
         check(pg.input_value("#retro") == "Summarizing the deal desk notes" and pg.input_value("#spend") == "75"
               and pg.is_checked("input[name=inc][value=no]"), "draft restores retro and usage")
@@ -129,8 +142,10 @@ try:
               "Make a change reloads ideas (blank one dropped) and time left")
         after = (_d.fromisoformat(nxt) + _t(days=7)).isoformat()      # the week after: starts from Drew's projects
         pg.fill("#week", after); pg.dispatch_event("#week", "change"); pg.wait_for_timeout(600)
-        check(pg.locator(".proj").count() == 2 and pg.locator(".proj").nth(0).locator(".f-left").input_value() == "1–2 weeks"
+        check(pg.locator(".proj").count() == 2 and pg.locator(".proj").nth(0).locator(".f-left").input_value() == "3–5 days"
               and pg.locator(".proj").nth(0).locator(".f-b").first.input_value() == "", "a new week carries over time left, not progress")
+        check(pg.locator(".proj").nth(1).locator(".f-team").is_visible() and pg.locator(".proj").nth(1).locator(".chips input[value='Casey Test']").is_checked(),
+              "a new week carries over who's working on it")
         ctx.close()
 
         # print layout of the report

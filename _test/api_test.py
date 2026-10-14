@@ -147,7 +147,7 @@ def run():
                                             "ideas": ideas or []})
 
     def proj(project, type_, _old_status, progress, saved=None, help_="", steps=None):
-        return {"project": project, "type": type_, "timeLeft": "2–4 weeks", "progress": progress, "nextSteps": steps or ["Keep going"],
+        return {"project": project, "type": type_, "timeLeft": "2–4 weeks", "solo": True, "progress": progress, "nextSteps": steps or ["Keep going"],
                 "timeSaved": saved, "couldHelp": help_}
 
     hub = {"category": "support hub", "timeSpent": "3-5 hrs", "claude": True, "timeSaved": "1-3 hrs", "note": "Answered rep questions"}
@@ -172,6 +172,11 @@ def run():
     s, d = send("Avery Test", w1, [{**cat, "timeLeft": ""}], use)
     check(s == 400 and "time is left" in d["error"], "needs time left on each project")
     check(send("Avery Test", w1, [{**cat, "timeLeft": "forever"}], use)[0] == 400, "time left must be one of the choices")
+    check("3–5 days" in call("GET", "/api/config")[1]["timeLeft"], "time left offers days as well as weeks")
+    s, d = send("Avery Test", w1, [{**cat, "solo": None}], use)
+    check(s == 400 and "solo" in d["error"], "needs solo or with others")
+    s, d = send("Avery Test", w1, [{**cat, "solo": False, "with": [" ", "Avery Test"]}], use)
+    check(s == 400 and "working with" in d["error"], "with others needs someone (not yourself)")
     s, d = send("Avery Test", w1, [cat], use, ideas=[{"idea": "", "why": "Saves time"}])
     check(s == 400 and d["errors"][0]["idea"] == 0, "an idea's why needs the idea itself")
     s, d = send("Avery Test", w1, [cat], use, [hub, {**hub, "claude": None}])
@@ -207,7 +212,7 @@ def run():
     check(len(call("GET", f"/api/mine?name=Avery%20Test&week={w1}")[1]["updates"]) == 1, "a project left off the resend is removed")
     check(d["usage"]["screenshot"] == shot and d["usage"]["spend"] == 430, "resend without a screenshot keeps the one on file")
     check(call("GET", f"/api/mine?name=Avery%20Test&week={w1}")[1]["tasks"] == [], "other work left off the resend is removed")
-    send("Avery Test", w1, [cat, spif], {**use, "spend": 430, "screenshot": None, "increase": {**use["increase"], "status": "Approved"}}, [hub],
+    send("Avery Test", w1, [cat, {**spif, "solo": False, "with": ["Blake Test", "Finance team", "finance TEAM"]}], {**use, "spend": 430, "screenshot": None, "increase": {**use["increase"], "status": "Approved"}}, [hub],
          ideas=[{"idea": "Auto-build QBR decks", "why": "Saves about 2 hrs per QBR"}, {"idea": " ", "why": ""}, {"idea": "Renewal alerts"}])
 
     send("Blake Test", w1, [proj("Commission Audit Tool", "Claude", "Blocked", ["Waiting on CIQ API access."], "1-3 hrs"),
@@ -281,6 +286,7 @@ def run():
     check(html.count(">New this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
     check("Drafting the approval matrix" in html, "retro answer shown")
     check("⏳ 2–4 weeks left" in html, "time left shown on each project")
+    check("👤 Solo" in html and "👥 With Blake Test, Finance team" in html, "solo / with whom shown (duplicates dropped)")
     check('id="ideas"' in html and "Auto-build QBR decks" in html and "Saves about 2 hrs per QBR" in html and "Renewal alerts" in html, "ideas section, blank idea dropped")
     s, t1 = call("GET", f"/report.txt?week={w1}", auth=ADMIN, raw=True)
     check("(2–4 weeks left)" in t1.decode() and "Avery Test: Auto-build QBR decks — Saves about 2 hrs per QBR" in t1.decode(), "Slack text has time left and ideas")

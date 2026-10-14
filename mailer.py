@@ -180,7 +180,10 @@ def html(r: dict, note: str = "") -> str:
             b.append(f'<div style="margin:0 0 12px;padding-left:8px;border-left:3px solid {report.ACCENT if u["type"] == "Claude" else LINE}">'
                      f'<b>{escape(u["project"])}</b><br>{pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'
                      f'{" " + pill("New this week", report.GREEN) if u["new"] else ""}'
-                     + (f'<div style="font-size:12px;font-weight:bold;color:{MUTED};margin-top:4px">⏳ {escape(report.time_left(u["timeLeft"]))}</div>' if u.get("timeLeft") else "") +
+                     + (f'<div style="font-size:12px;font-weight:bold;color:{MUTED};margin-top:4px">'
+                        + " · ".join(x for x in (f'⏳ {escape(report.time_left(u["timeLeft"]))}' if u.get("timeLeft") else "",
+                                                 f'{"👤" if u.get("solo") else "👥"} {escape(report.team(u))}' if report.team(u) else "") if x)
+                        + '</div>' if u.get("timeLeft") or report.team(u) else "") +
                      f'<div style="font-size:11px;font-weight:bold;color:{report.GREEN};margin-top:4px">PROGRESS</div><ul {ul}>' + "".join(f"<li>{escape(x)}</li>" for x in u["progress"]) + "</ul>"
                      + (f'<div style="font-size:11px;font-weight:bold;color:{report.BLUE};margin-top:4px">NEXT STEPS</div><ul {ul}>' + "".join(f"<li>{escape(x)}</li>" for x in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
                      + (f'<div {small}>{extra}</div>' if extra else "") + "</div>")

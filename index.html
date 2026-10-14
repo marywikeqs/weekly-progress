@@ -30,6 +30,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .money{position:relative}.money span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)}.money input{padding-left:24px}
 .bullet{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}.bullet b{color:var(--muted);padding-top:9px;width:12px}
 .bullet textarea{min-height:44px;overflow:hidden}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chips label{margin:0;font-weight:500;font-size:14px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;display:flex;gap:6px;align-items:center;cursor:pointer}
+.chips input{width:auto;height:auto!important;margin:0;accent-color:var(--accent)}.chips label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.f-team .f-others{margin-top:8px}
+.x-line{flex:none;background:none;border:0;color:var(--muted);font-size:20px;line-height:1;padding:10px 4px;cursor:pointer;border-radius:6px}
+.x-line:hover{color:var(--red)}
 .more{background:none;border:0;font:inherit;font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;padding:0 0 4px 20px}
 .seg{display:flex;gap:8px}.seg label{flex:1;margin:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .seg input{width:auto;margin:0}.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
@@ -231,7 +237,7 @@ async function init() {
   // drafts: saved a few seconds after any change, or right away with Save draft
   $('form').addEventListener('input', draftSoon);
   $('form').addEventListener('change', draftSoon);
-  $('form').addEventListener('click', e => { if (e.target.closest('.remove, #add, #add-task, #add-idea')) draftSoon(); });
+  $('form').addEventListener('click', e => { if (e.target.closest('.remove, .x-line, #add, #add-task, #add-idea')) draftSoon(); });
   $('save-draft').onclick = () => saveDraft(true);
   addEventListener('pagehide', () => { if (draftTimer) saveDraft(false, true); });
   load();
@@ -256,7 +262,7 @@ async function load() {
     st.hidden = false;
   } else {
     const carry = MINE.lastProjects;
-    carry.forEach(u => addCard({project: u.project, type: u.type, timeLeft: u.timeLeft}));
+    carry.forEach(u => addCard({project: u.project, type: u.type, timeLeft: u.timeLeft, solo: u.solo, with: u.with}));
     if (!carry.length) addCard();
     st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one (check the time left), and remove any you didn't work on this week.` : '';
     st.hidden = !carry.length;
@@ -347,12 +353,18 @@ function addCard(u = {}) {
     </div>
     <div class="row">
       <div><label for="l${id}">Time left on this project</label><select id="l${id}" class="f-left">${options(CFG.timeLeft, 'Choose')}</select></div>
+      <div><span class="lbl" style="margin-top:0">Who's working on it?</span>
+        <div class="seg f-solo"><label><input type="radio" name="solo${id}" value="solo"> Just me</label><label><input type="radio" name="solo${id}" value="team"> With others</label></div></div>
+    </div>
+    <div class="f-team" hidden>
+      <div class="chips">${CFG.roster.filter(n => n !== $('name').value).map(n => `<label><input type="checkbox" value="${esc(n)}"> ${esc(n)}</label>`).join('')}</div>
+      <input class="f-others" maxlength="200" placeholder="Anyone else, e.g. Finance team (separate with commas)" aria-label="Others working on it">
     </div>
     <span class="lbl">Progress this week</span>
-    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Another line' : 'What moved this week'}"></textarea></div>`).join('')}
+    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Another line' : 'What moved this week'}"></textarea>${i ? '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>' : ''}</div>`).join('')}
     <button type="button" class="more">+ Add a line</button>
     <span class="lbl">Next steps</span>
-    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Another line' : 'What\'s next'}"></textarea></div>`).join('')}
+    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Another line' : 'What\'s next'}"></textarea>${i ? '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>' : ''}</div>`).join('')}
     <button type="button" class="more">+ Add a line</button>
     <div class="card-err" hidden></div>`;
   const q = s => el.querySelector(s);
@@ -362,6 +374,13 @@ function addCard(u = {}) {
   }
   q('.f-type').value = u.type || '';
   q('.f-left').value = u.timeLeft || '';
+  if (u.solo === true || u.solo === false) el.querySelector(`.f-solo input[value=${u.solo ? 'solo' : 'team'}]`).checked = true;
+  const mates = new Set();
+  el.querySelectorAll('.chips input').forEach(c => { if ((u.with || []).includes(c.value)) { c.checked = true; mates.add(c.value); } });
+  q('.f-others').value = (u.with || []).filter(w => !mates.has(w)).join(', ');
+  const teamSync = () => { q('.f-team').hidden = !q('.f-solo input[value=team]').checked; };
+  el.querySelectorAll('.f-solo input').forEach(r => r.addEventListener('change', teamSync));
+  teamSync();
   el.querySelectorAll('.f-b').forEach((t, i) => t.value = (u.progress || [])[i] || '');
   el.querySelectorAll('.f-n').forEach((t, i) => t.value = (u.nextSteps || [])[i] || '');
   const sync = () => {
@@ -384,6 +403,13 @@ function addCard(u = {}) {
     lines.forEach((b, i) => { if (i && b.querySelector('textarea').value) b.hidden = false; });
     const fit = () => { btn.hidden = lines.every(b => !b.hidden); };
     btn.onclick = () => { const b = lines.find(b => b.hidden); b.hidden = false; const t = b.querySelector('textarea'); grow(t); t.focus(); fit(); };
+    // × on an extra line: lines below move up, the last one tucks away again
+    lines.forEach(b => { const x = b.querySelector('.x-line'); if (x) x.onclick = () => {
+      const vis = lines.filter(l => !l.hidden), ta = l => l.querySelector('textarea');
+      for (let k = vis.indexOf(b); k < vis.length - 1; k++) ta(vis[k]).value = ta(vis[k + 1]).value;
+      const last = vis[vis.length - 1]; ta(last).value = ''; last.hidden = true;
+      vis.forEach(l => grow(ta(l))); fit();
+    }; });
     fit();
   });
   q('.remove').onclick = () => { el.remove(); renumber(); };
@@ -407,6 +433,9 @@ function readCard(el) {
     project: (isNew ? q('.f-new').value : q('.f-pick').value).trim(),
     type: q('.f-type').value,
     timeLeft: q('.f-left').value,
+    solo: q('.f-solo input:checked') ? q('.f-solo input:checked').value === 'solo' : null,
+    with: q('.f-solo input[value=team]').checked
+      ? [...el.querySelectorAll('.chips input:checked')].map(c => c.value).concat(q('.f-others').value.split(',').map(x => x.trim()).filter(Boolean)) : [],
     progress: [...el.querySelectorAll('.f-b')].map(t => t.value.trim()).filter(Boolean),
     nextSteps: [...el.querySelectorAll('.f-n')].map(t => t.value.trim()).filter(Boolean),
   };
@@ -417,6 +446,8 @@ function checkCard(el, d) {   // the server's rules, checked here to point at th
   if (!d.project) bad.push([isNew ? q('.f-new') : q('.f-pick'), 'Choose or name the project.']);
   if (!d.type) bad.push([q('.f-type'), 'Choose the project type.']);
   if (!d.timeLeft) bad.push([q('.f-left'), 'Choose how much time is left.']);
+  if (d.solo === null) bad.push([q('.f-solo'), 'Say whether it\'s just you or with others.']);
+  else if (!d.solo && !d.with.length) bad.push([q('.f-others'), 'Pick or name who you\'re working with.']);
   if (!d.progress.length) bad.push([q('.f-b'), 'Add at least one line of progress.']);
   if (!d.nextSteps.length) bad.push([q('.f-n'), 'Add at least one next step.']);
   return bad;
@@ -558,7 +589,7 @@ async function send(ev) {
   ev.preventDefault();
   const cards = [...document.querySelectorAll('.proj')];
   // a blank extra card is skipped rather than blocking the send
-  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.nextSteps.length || d.type || d.timeLeft; });
+  const used = cards.filter(c => { const d = readCard(c); return cards.length === 1 || d.project || d.progress.length || d.nextSteps.length || d.type || d.timeLeft || d.solo !== null; });
   let firstBad = null;
   used.forEach(c => {
     const bad = checkCard(c, readCard(c));

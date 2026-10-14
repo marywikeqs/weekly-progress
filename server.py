@@ -211,8 +211,21 @@ def clean_update(d: dict) -> dict | str:
         return "Add at least one next step."
     if d.get("timeLeft") not in TIME_LEFT:
         return "Choose how much time is left on the project."
+    # solo, or with whom: teammates from the roster and anyone typed in
+    solo = d.get("solo")
+    if solo not in (True, False):
+        return "Say whether you're working on it solo or with others."
+    others = []
+    if not solo:
+        for w in d.get("with") or []:
+            w = re.sub(r"\s+", " ", str(w)).strip()[:80]
+            if w and w.lower() != name.lower() and w.lower() not in {o.lower() for o in others}:
+                others.append(w)
+        others = others[:10]
+        if not others:
+            return "Add who you're working with."
     out = {"name": name, "week": d["week"], "project": project,
-           "type": ptype, "timeLeft": d["timeLeft"], "progress": bullets, "nextSteps": steps,
+           "type": ptype, "timeLeft": d["timeLeft"], "solo": solo, "with": others, "progress": bullets, "nextSteps": steps,
            "timeSaved": None, "couldHelp": ""}
     return out
 
@@ -400,6 +413,7 @@ UPDATE_COLS = [
     ("Project", lambda r: r["project"]),
     ("Type", lambda r: r["type"]),
     ("Time left", lambda r: r.get("timeLeft", "")),
+    ("Working with", lambda r: "Solo" if r.get("solo") else ", ".join(r.get("with", []))),
     ("Progress this week", lambda r: "\n".join("• " + b for b in r["progress"])),
     ("Next steps", lambda r: "\n".join("• " + b for b in r.get("nextSteps", []))),
     ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
