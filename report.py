@@ -152,13 +152,6 @@ def build(data: dict, week: str) -> dict:
             if t["name"] not in i["people"]:
                 i["people"].append(t["name"])
     top = sorted((i for i in impact.values() if i["hours"] > 0), key=lambda i: (-i["hours"], i["project"].lower()))[:5]
-    # "where could Claude have helped": the weekly retro answer, plus any per-project
-    # notes from before that question moved to the end of the form
-    suggestions = sorted([{"project": "", "name": u["name"], "text": u["retro"]} for u in cur["usage"]
-                          if u.get("retro") and not re.fullmatch(r"(?i)\W*(nothing|none|n/?a|no)\b.*", u["retro"])]
-                         + [{"project": u["project"], "name": u["name"], "text": u["couldHelp"]}
-                            for u in cur["updates"] if u["type"] != "Claude" and u.get("couldHelp")],
-                         key=lambda s: (s["name"], s["project"].lower()))
 
     # upcoming project ideas, by person
     ideas = [{"name": u["name"], **i} for u in sorted(cur["usage"], key=lambda u: u["name"]) for i in u.get("ideas", [])]
@@ -183,7 +176,7 @@ def build(data: dict, week: str) -> dict:
     return {
         "week": week, "prevWeek": prev, "hasPrev": has_prev, "sameMonth": same_month,
         "cur": cur, "last": last, "participation": participation,
-        "people": people, "other": other_groups, "top": top, "suggestions": suggestions, "ideas": ideas,
+        "people": people, "other": other_groups, "top": top, "ideas": ideas,
         "spend": spend_rows, "requests": requests,
         "flagged": [u for u in spend_rows if u["flag"]],
         "shots": [u for u in spend_rows if u.get("screenshot")],
@@ -221,9 +214,6 @@ def render_text(r: dict, base_url: str = "") -> str:
     top = ", ".join(f"{t['project']} ({t['hours']:g} hrs)" for t in r["top"][:3])
     lines.append(f"*Claude time saved:* ~{c['hours']:g} hrs{_delta(c['hours'], l['hours'], hp, ' hrs')}"
                  + (f" · top: {top}" if top else ""))
-    if r["suggestions"]:
-        lines.append("*Where Claude could have helped:*")
-        lines += [f"   • {s['name']}: {s['text']}" for s in r["suggestions"]]
     if r["ideas"]:
         lines.append("*Upcoming project ideas:*")
         lines += [f"   • {i['name']}: {i['idea']}" + (f" [{IDEA_STATUS[i['status']]}]" if i.get("status") in IDEA_STATUS else "")
@@ -297,7 +287,6 @@ h2 span{color:var(--faint);font-weight:400;font-size:12px}
 .g-row{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--line)}.g-row:last-child{border-bottom:0}
 .g-row .av{margin-top:1px}.g-proj{font-size:13.5px}.g-other{font-size:12.5px;color:var(--muted)}
 .late{font-size:12px;font-weight:600;color:var(--p1)}
-.g-help{margin:4px 0 0;padding-left:18px;font-size:13.5px}
 .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;align-items:start}
 .pcard{border:1px solid var(--edge);border-top:4px solid var(--c);border-radius:10px;padding:12px 16px 4px;min-width:0;background:color-mix(in srgb,var(--c) 4%,var(--bg))}
 .pcard .row:last-child{border-bottom:0}
@@ -444,9 +433,6 @@ def render_html(r: dict, weeks: list) -> str:
                  + (f'<div class="g-other">Other: {escape(", ".join(dict.fromkeys(t["category"] for t in pp["tasks"])))}</div>' if pp["tasks"] else "")
                  + "</div></div>")
     o.append("</div>")
-    if r["suggestions"]:
-        o.append('<div class="sublabel" style="--c:#dc4c3e">Where Claude could have helped</div><ul class="g-help">'
-                 + "".join(f'<li><b>{escape(s["name"])}:</b> {escape(s["text"])}</li>' for s in r["suggestions"]) + "</ul>")
 
     # the digest, by person
     o.append(f'<h2 id="digest" style="--c:{BLUE}">The week, by person <span>{c["projects"]} project{"" if c["projects"] == 1 else "s"}'
@@ -462,8 +448,6 @@ def render_html(r: dict, weeks: list) -> str:
             meta = ""
             if u["type"] == "Claude" and u.get("timeSaved"):
                 meta = f'⏱ Time saved with Claude: {escape(u["timeSaved"])}'
-            elif u.get("couldHelp"):
-                meta = f'💡 Claude could have helped: {escape(u["couldHelp"])}'
             o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
                      f'<div class="top"><strong>{escape(u["project"])}</strong>{_label(u["type"])}'
                      + (_pill("New this week", GREEN) if u["new"] else "")
@@ -494,20 +478,14 @@ def render_html(r: dict, weeks: list) -> str:
     # Claude impact
     o.append(f'<h2 id="impact" style="--c:{ACCENT}">Claude impact <span>about {c["hours"]:g} hours saved</span></h2>'
              '<p class="note">Each answer counts at its range midpoint: none 0, under 1 hr 0.5, 1–3 hrs 2, 3–5 hrs 4, 5+ hrs 6.</p>'
-             + ('<div class="cols"><div>' if r["suggestions"] else "<div>") + '<div class="group-head">Top Claude time savings</div>')
+             '<div class="group-head">Top Claude time savings</div>')
     if r["top"]:
         o.append('<table><thead><tr><th>Project</th><th>People</th><th class="num">Hours</th></tr></thead><tbody>'
                  + "".join(f'<tr><td>{escape(t["project"])}</td><td>{escape(", ".join(t["people"]))}</td><td class="num">{t["hours"]:g}</td></tr>' for t in r["top"])
                  + "</tbody></table>")
     else:
         o.append('<p class="empty">No time saved reported.</p>')
-    if r["suggestions"]:
-        o.append('</div><div><div class="group-head">Where Claude could have helped</div>')
-        o.append("".join(f'<div class="row">{_av(s["name"], pc.get(s["name"], BLUE), "sm")}<div class="body"><strong>{escape(s["name"])}</strong> '
-                         + (f'<span class="label">{escape(s["project"])}</span>' if s["project"] else "")
-                         + f'<div class="meta">{escape(s["text"])}</div></div></div>' for s in r["suggestions"]))
-        o.append("</div>")
-    o.append("</div>")
+
 
     # usage and spend
     wk_note = "" if r["sameMonth"] else " A new month started this week, so there's no weekly change."

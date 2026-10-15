@@ -142,8 +142,8 @@ def run():
     s, d = call("GET", "/api/config")
     check(d["roster"] == people, "inactive people left off the form")
 
-    def send(name, week, projects, usage, tasks=None, retro="Drafting the approval matrix", ideas=None):
-        return call("POST", "/api/submit", {"name": name, "week": week, "projects": projects, "usage": usage, "tasks": tasks or [], "retro": retro,
+    def send(name, week, projects, usage, tasks=None, ideas=None):
+        return call("POST", "/api/submit", {"name": name, "week": week, "projects": projects, "usage": usage, "tasks": tasks or [],
                                             "ideas": ideas or []})
 
     def proj(project, type_, _old_status, progress, saved=None, help_="", steps=None):
@@ -205,7 +205,7 @@ def run():
     check("Pricing desk" in call("GET", "/api/config")[1]["taskCategories"], "a typed kind of work stays pickable")
     a_cat = d["updates"][0]
     check(a_cat["progress"] == cat["progress"][:2] + ["extra"], "blank bullets dropped, max 3 kept")
-    check(a_cat["couldHelp"] == "" and d["updates"][1]["timeSaved"] is None, "conditional fields kept only for their type")
+    check("couldHelp" not in a_cat and d["updates"][1]["timeSaved"] is None, "conditional fields kept only for their type")
     check(d["usage"]["spend"] == 412.5, "$ and commas parsed")
     shot = d["usage"]["screenshot"]
     s, d = send("Avery Test", w1, [{**cat, "project": "commission audit tool"}],
@@ -288,6 +288,7 @@ def run():
     check("Blocked" not in html and "At risk" not in html and "Status" not in html, "no status anywhere")
     check(html.count(">New this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
     check("Drafting the approval matrix" not in html and "Where Claude could have helped" not in html, "no retro section in the report")
+    check("could have helped" not in html.lower(), "no 'Claude could have helped' anywhere in the report")
     check("⏳ 2–4 weeks left" in html, "time left shown on each project")
     check("👤 Solo" in html and "👥 With Blake Test, Finance team" in html, "solo / with whom shown (duplicates dropped)")
     check('id="ideas"' in html and "Auto-build QBR decks" in html and "Saves about 2 hrs per QBR" in html and "Renewal alerts" in html, "ideas section, blank idea dropped")

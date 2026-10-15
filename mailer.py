@@ -142,7 +142,7 @@ def html(r: dict, note: str = "") -> str:
     o.append(f'<table cellpadding="0" cellspacing="0" width="100%" style="margin-top:12px;border-collapse:collapse"><tr>{"".join(cells[:2])}</tr>'
              f'<tr>{"".join(cells[2:])}</tr></table>')
 
-    # At a glance: one line per person, then the retro answers; the full breakdown follows
+    # At a glance: one line per person; the full breakdown follows
     if r["people"]:
         rows = []
         for pp in r["people"]:
@@ -157,10 +157,6 @@ def html(r: dict, note: str = "") -> str:
         o.append(f'<div style="margin-top:16px;background:{tint(report.ORANGE, .07)};border:1px solid {tint(report.ORANGE, .3)};border-radius:8px;padding:12px 14px">'
                  f'<div style="font-size:12px;font-weight:bold;letter-spacing:.04em;color:{shade(report.ORANGE)}">AT A GLANCE</div>'
                  f'<table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;font-size:14px">{"".join(rows)}</table>')
-        if r["suggestions"]:
-            o.append(f'<div style="font-size:12px;font-weight:bold;letter-spacing:.04em;color:{report.ACCENT};margin-top:12px">WHERE CLAUDE COULD HAVE HELPED</div>'
-                     f'<ul style="margin:4px 0 0;padding-left:18px">'
-                     + "".join(f'<li><b>{escape(s["name"])}:</b> {escape(s["text"])}</li>' for s in r["suggestions"]) + "</ul>")
         o.append(f'</div><h2 {h2}>Full breakdown</h2>')
 
     sub = f'style="font-size:12px;color:{MUTED};margin-top:2px"'
@@ -175,8 +171,7 @@ def html(r: dict, note: str = "") -> str:
         b = [f'<div style="font-size:15px;font-weight:bold;margin-bottom:8px"><span style="display:inline-block;width:24px;height:24px;line-height:24px;'
              f'text-align:center;border-radius:12px;background:{col};color:#fff;font-size:10px;margin-right:6px">{escape(initials)}</span>{escape(pp["name"])}</div>']
         for u in pp["projects"]:
-            extra = (f'Time saved with Claude: {escape(u["timeSaved"])}' if u["type"] == "Claude" and u.get("timeSaved")
-                     else (f'Claude could have helped: {escape(u["couldHelp"])}' if u.get("couldHelp") else ""))
+            extra = f'Time saved with Claude: {escape(u["timeSaved"])}' if u["type"] == "Claude" and u.get("timeSaved") else ""
             b.append(f'<div style="margin:0 0 12px;padding-left:8px;border-left:3px solid {report.ACCENT if u["type"] == "Claude" else LINE}">'
                      f'<b>{escape(u["project"])}</b><br>{pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'
                      f'{" " + pill("New this week", report.GREEN) if u["new"] else ""}'

@@ -226,7 +226,7 @@ def clean_update(d: dict) -> dict | str:
             return "Add who you're working with."
     out = {"name": name, "week": d["week"], "project": project,
            "type": ptype, "timeLeft": d["timeLeft"], "solo": solo, "with": others, "progress": bullets, "nextSteps": steps,
-           "timeSaved": None, "couldHelp": ""}
+           "timeSaved": None}
     return out
 
 
@@ -418,7 +418,6 @@ UPDATE_COLS = [
     ("Next steps", lambda r: "\n".join("• " + b for b in r.get("nextSteps", []))),
     ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
     ("Time saved (hrs, midpoint)", lambda r: report.hours(r) if r["type"] == "Claude" else ""),
-    ("Claude could have helped", lambda r: r.get("couldHelp", "")),
     ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
 ]
 TASK_COLS = [
@@ -436,7 +435,6 @@ USAGE_COLS = [
     ("Requested budget", lambda r: (r.get("increase") or {}).get("amount", "")),
     ("Reason", lambda r: (r.get("increase") or {}).get("reason", "")),
     ("Request status", lambda r: (r.get("increase") or {}).get("status", "")),
-    ("Where Claude could have helped", lambda r: r.get("retro", "")),
     ("Upcoming project ideas", lambda r: "\n".join("• " + i["idea"] + (f" [{report.IDEA_STATUS[i['status']]}]" if i.get("status") in report.IDEA_STATUS else "")
                                                      + (f" — {i['why']}" if i.get("why") else "") for i in r.get("ideas", []))),
     ("Screenshot", lambda r: f"/screenshots/{r['screenshot']}" if r.get("screenshot") else ""),
