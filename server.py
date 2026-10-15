@@ -127,6 +127,53 @@ def load() -> None:
     DATA["tasks"] = _read("tasks.json", [])      # other work: Support Hub, Deal Desk, ...
     DATA["sent"] = _read("sent.json", {})      # week -> when the report email went out
     DATA["drafts"] = _read("drafts.json", {})  # "name|week" -> the form as last saved; never in the report
+    purge_retired()
+
+
+# answers to questions the form no longer asks; deleted from storage (including the
+# change log) on start-up, per Mary 2026-10-15
+RETIRED = ("retro", "couldHelp")
+
+
+def _strip(x):
+    """x without any RETIRED keys, at any depth; (new value, whether anything went)."""
+    if isinstance(x, dict):
+        out, hit = {}, False
+        for k, v in x.items():
+            if k in RETIRED:
+                hit = True
+                continue
+            out[k], h = _strip(v)
+            hit = hit or h
+        return out, hit
+    if isinstance(x, list):
+        pairs = [_strip(v) for v in x]
+        return [v for v, _ in pairs], any(h for _, h in pairs)
+    return x, False
+
+
+def purge_retired() -> None:
+    for key in ("updates", "usage", "drafts"):
+        DATA[key], hit = _strip(DATA[key])
+        if hit:
+            write(key)
+    try:
+        if LOG.exists():
+            lines, hit = [], False
+            for line in LOG.read_text(encoding="utf-8").splitlines():
+                try:
+                    rec, h = _strip(json.loads(line))
+                except ValueError:
+                    lines.append(line)
+                    continue
+                hit = hit or h
+                lines.append(json.dumps(rec, ensure_ascii=False))
+            if hit:
+                tmp = LOG.with_suffix(".tmp")
+                tmp.write_text("".join(l + "\n" for l in lines), encoding="utf-8")
+                os.replace(tmp, LOG)
+    except OSError as exc:
+        sys.stderr.write(f"could not clean {LOG}: {exc}\n")
 
 
 def write(key: str) -> bool:
