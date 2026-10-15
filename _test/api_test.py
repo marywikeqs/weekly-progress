@@ -187,8 +187,7 @@ def run():
     check(s == 400 and d["errors"][0].get("task") == 1, "a bad other-work line is pointed at by index")
     check(send("Avery Test", w1, [cat], use, [{**hub, "timeSaved": None}])[0] == 400, "Claude used on other work needs time saved")
     check(send("Avery Test", w1, [cat], use, [{**hub, "note": " "}])[0] == 400, "other work needs a short summary")
-    s, d = send("Avery Test", w1, [cat], use, retro=" ")
-    check(s == 400 and d["errors"][0].get("retro"), "the Claude retro question is required")
+
     s, d = send("Nobody", w1, [cat], use)
     check(s == 400 and d["error"] == "Pick your name." and d["errors"] == [], "name must be on the roster (said once)")
     check(send("Avery Test", (fri - timedelta(days=1)).isoformat(), [cat], use)[0] == 400, "week must be a Friday")
@@ -288,7 +287,7 @@ def run():
     check(html.index(">Avery Test<") < html.index(">Blake Test<") < html.index(">Casey Test<"), "digest is by person")
     check("Blocked" not in html and "At risk" not in html and "Status" not in html, "no status anywhere")
     check(html.count(">New this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
-    check("Drafting the approval matrix" in html, "retro answer shown")
+    check("Drafting the approval matrix" not in html and "Where Claude could have helped" not in html, "no retro section in the report")
     check("⏳ 2–4 weeks left" in html, "time left shown on each project")
     check("👤 Solo" in html and "👥 With Blake Test, Finance team" in html, "solo / with whom shown (duplicates dropped)")
     check('id="ideas"' in html and "Auto-build QBR decks" in html and "Saves about 2 hrs per QBR" in html and "Renewal alerts" in html, "ideas section, blank idea dropped")

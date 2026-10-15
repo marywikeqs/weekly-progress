@@ -679,9 +679,6 @@ class Handler(BaseHTTPRequestHandler):
             usage = clean_usage({**(body.get("usage") or {}), "name": name, "week": week})
             if isinstance(usage, str):
                 errors.append({"usage": True, "error": usage})
-            retro = re.sub(r"\s+", " ", str(body.get("retro") or "")).strip()[:500]
-            if not retro:
-                errors.append({"retro": True, "error": "Say where Claude could have helped this week, or write \"Nothing this week\"."})
             # upcoming project ideas (optional): a name and a short why each
             ideas = []
             for i, x in enumerate(body.get("ideas") or []):
@@ -711,7 +708,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(400, {"error": "That screenshot couldn't be read. Upload a PNG or JPG image.",
                                                 "errors": [{"usage": True, "error": "That screenshot couldn't be read."}]})
             usage["screenshot"] = shot
-            usage["retro"] = retro
             usage["ideas"] = ideas
 
             # projects: replace this person's week with what was sent

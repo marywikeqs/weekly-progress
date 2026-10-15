@@ -130,13 +130,6 @@ button:disabled{opacity:.6;cursor:default}
       <button type="button" class="add-line" id="add-idea">+ Add an idea</button>
     </div>
 
-    <h2>Looking back</h2>
-    <div class="card" id="retro-card">
-      <label for="retro">Where could Claude have helped this week?</label>
-      <p class="hint" style="margin:0 0 6px">Anything that took longer than it should have, or that Claude could have drafted, checked or sped up. If nothing comes to mind, write "Nothing this week".</p>
-      <textarea id="retro" rows="2" maxlength="500" placeholder="e.g. Pulling the data for the board deck by hand"></textarea>
-      <div class="card-err" id="retro-err" hidden></div>
-    </div>
 
     <h2>Claude usage</h2>
     <div class="card" id="usage">
@@ -301,7 +294,7 @@ async function load() {
 // ---- drafts: the form as typed, kept on the server until sent ----
 function readForm() {
   return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('#tasks .task')].map(readTask),
-          ideas: [...document.querySelectorAll('.idea')].map(readIdea), retro: $('retro').value, spend: $('spend').value, budget: $('budget').value, inc: incValue(),
+          ideas: [...document.querySelectorAll('.idea')].map(readIdea), spend: $('spend').value, budget: $('budget').value, inc: incValue(),
           incAmount: $('inc-amount').value, incStatus: $('inc-status').value, incReason: $('inc-reason').value};
 }
 function applyForm(f) {
@@ -315,7 +308,6 @@ function applyForm(f) {
   $('ideas').innerHTML = '';
   (f.ideas || []).forEach(x => addIdea(x));
   ideasEmpty();
-  $('retro').value = f.retro || '';
   $('spend').value = f.spend ?? ''; $('budget').value = f.budget ?? '';
   document.querySelectorAll('input[name=inc]').forEach(r => r.checked = f.inc !== null && f.inc !== undefined && (r.value === 'yes') === f.inc);
   $('inc-wrap').hidden = f.inc !== true;
@@ -584,10 +576,8 @@ function incValue() { const r = document.querySelector('input[name=inc]:checked'
 function clearUsage() { document.querySelectorAll('#usage .invalid').forEach(x => x.classList.remove('invalid')); $('usage-err').hidden = true; }
 $('usage').addEventListener('input', clearUsage);
 $('usage').addEventListener('change', clearUsage);
-$('retro').addEventListener('input', () => { $('retro').classList.remove('invalid'); $('retro-err').hidden = true; });
 function fillUsage() {
   const u = MINE.usage;
-  $('retro').value = u?.retro || ''; $('retro').classList.remove('invalid'); $('retro-err').hidden = true;
   shotData = null; $('shot').value = ''; $('shot-preview').style.display = 'none';
   $('spend').value = u ? u.spend : '';
   $('budget').value = u ? u.budget : (MINE.lastBudget ?? '');
@@ -664,10 +654,6 @@ async function send(ev) {
     taskError(el, errs.join(' '));
     if (errs.length && !firstBad) firstBad = el;
   });
-  if (!$('retro').value.trim()) {
-    $('retro').classList.add('invalid'); $('retro-err').textContent = 'Say where Claude could have helped, or write "Nothing this week".'; $('retro-err').hidden = false;
-    if (!firstBad) firstBad = $('retro-card');
-  }
   const ub = checkUsage();
   ub.forEach(b => b[0].classList.add('invalid'));
   $('usage-err').textContent = ub.map(b => b[1]).join(' '); $('usage-err').hidden = !ub.length;
@@ -676,7 +662,7 @@ async function send(ev) {
 
   const inc = incValue();
   const body = {
-    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), ideas: ideaEls.map(readIdea), retro: $('retro').value.trim(),
+    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), ideas: ideaEls.map(readIdea),
     usage: {spend: num($('spend').value), budget: num($('budget').value), increaseRequested: inc,
             increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
             screenshot: shotData},
@@ -689,8 +675,7 @@ async function send(ev) {
     showDone(r);
   } catch (e) {
     (e.body?.errors || []).forEach(x => {
-      if (x.retro) { $('retro').classList.add('invalid'); $('retro-err').textContent = x.error; $('retro-err').hidden = false; }
-      else if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
+      if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
       else if (x.task != null && taskEls[x.task]) taskError(taskEls[x.task], x.error);
       else if (x.idea != null && ideaEls[x.idea]) taskError(ideaEls[x.idea], x.error);
       else if (x.project != null && used[x.project]) cardError(used[x.project], x.error);

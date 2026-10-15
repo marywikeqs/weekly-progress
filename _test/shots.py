@@ -116,7 +116,7 @@ try:
         pg.locator(".idea .i-status input[value=discuss]").last.check()
         pg.click("#add-idea")   # a second, left blank: skipped on send
         pg.click("#add")   # a third, left blank: skipped on send
-        pg.fill("#retro", "Summarizing the deal desk notes");
+        check(pg.locator("#retro").count() == 0, "no Looking back section")
         pg.fill("#spend", "75"); pg.fill("#budget", "250"); pg.check("input[name=inc][value=no]")
         # draft: autosaves, survives a reload, nothing sent
         pg.wait_for_timeout(3600)
@@ -135,8 +135,7 @@ try:
               and pg.locator(".proj").nth(1).locator(".f-others").input_value() == "Finance team", "draft restores who's working on it")
         check(pg.locator(".idea").count() == 2 and pg.locator(".idea .i-idea").first.input_value() == "Auto-build QBR decks"
               and pg.locator(".idea .i-status input[value=discuss]").first.is_checked(), "draft restores ideas")
-        check(pg.input_value("#retro") == "Summarizing the deal desk notes" and pg.input_value("#spend") == "75"
-              and pg.is_checked("input[name=inc][value=no]"), "draft restores retro and usage")
+        check(pg.input_value("#spend") == "75" and pg.is_checked("input[name=inc][value=no]"), "draft restores usage")
         check("screenshot" in (pg.text_content("#shot-state") or ""), "says to attach the screenshot")
         pg.screenshot(path=str(OUT / "flow-draft.png"), full_page=True)
         pg.set_input_files("#shot", str(OUT / "form-phone-light.png"))

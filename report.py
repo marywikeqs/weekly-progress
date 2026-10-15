@@ -493,22 +493,21 @@ def render_html(r: dict, weeks: list) -> str:
 
     # Claude impact
     o.append(f'<h2 id="impact" style="--c:{ACCENT}">Claude impact <span>about {c["hours"]:g} hours saved</span></h2>'
-             '<p class="note">Each answer counts at its range midpoint: none 0, under 1 hr 0.5, 1–3 hrs 2, 3–5 hrs 4, 5+ hrs 6.</p><div class="cols"><div>'
-             '<div class="group-head">Top Claude time savings</div>')
+             '<p class="note">Each answer counts at its range midpoint: none 0, under 1 hr 0.5, 1–3 hrs 2, 3–5 hrs 4, 5+ hrs 6.</p>'
+             + ('<div class="cols"><div>' if r["suggestions"] else "<div>") + '<div class="group-head">Top Claude time savings</div>')
     if r["top"]:
         o.append('<table><thead><tr><th>Project</th><th>People</th><th class="num">Hours</th></tr></thead><tbody>'
                  + "".join(f'<tr><td>{escape(t["project"])}</td><td>{escape(", ".join(t["people"]))}</td><td class="num">{t["hours"]:g}</td></tr>' for t in r["top"])
                  + "</tbody></table>")
     else:
         o.append('<p class="empty">No time saved reported.</p>')
-    o.append('</div><div><div class="group-head">Where Claude could have helped</div>')
     if r["suggestions"]:
+        o.append('</div><div><div class="group-head">Where Claude could have helped</div>')
         o.append("".join(f'<div class="row">{_av(s["name"], pc.get(s["name"], BLUE), "sm")}<div class="body"><strong>{escape(s["name"])}</strong> '
                          + (f'<span class="label">{escape(s["project"])}</span>' if s["project"] else "")
                          + f'<div class="meta">{escape(s["text"])}</div></div></div>' for s in r["suggestions"]))
-    else:
-        o.append('<p class="empty">No suggestions this week.</p>')
-    o.append("</div></div>")
+        o.append("</div>")
+    o.append("</div>")
 
     # usage and spend
     wk_note = "" if r["sameMonth"] else " A new month started this week, so there's no weekly change."
