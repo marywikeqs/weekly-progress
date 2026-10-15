@@ -41,6 +41,7 @@ SENT = []          # emails the fake Resend received
 TODO = {}          # the fake Todoist's tasks, by id
 TODO_IDS = itertools.count(1)
 GOOD_TOKEN = "a1" * 20
+PROJECTS = [{"id": "inbox", "name": "Inbox", "inbox_project": True}, {"id": "wp", "name": "Weekly Progress", "is_shared": True}]
 
 
 class FakeResend(BaseHTTPRequestHandler):
@@ -55,11 +56,19 @@ class FakeResend(BaseHTTPRequestHandler):
         path, _, query = self.path[len("/todoist"):].partition("?")
         q = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}") if method == "POST" else {}
+        if path == "/user":
+            return self._json(200, {"id": "u1", "full_name": "Casey Test"})
         if path == "/projects":
-            return self._json(200, {"results": [{"id": "inbox"}], "next_cursor": None})
+            return self._json(200, {"results": PROJECTS, "next_cursor": None})
         if path == "/tasks" and method == "GET":     # active tasks only
-            return self._json(200, {"results": [t for t in TODO.values() if not t["checked"] and ("parent_id" not in q or t.get("parent_id") == q["parent_id"])],
+            return self._json(200, {"results": [t for t in TODO.values() if not t["checked"] and all(t.get(k) == q[k] for k in ("parent_id", "project_id") if k in q)],
                                     "next_cursor": None})
+        if path.endswith("/move"):
+            tid = path.split("/")[2]
+            for t in TODO.values():
+                if t["id"] == tid or t.get("parent_id") == tid:        # subtasks move with it
+                    t["project_id"] = body["project_id"]
+            return self._json(204)
         if path.endswith("/close") or path.endswith("/reopen"):
             tid = path.split("/")[2]
             if tid not in TODO:
@@ -67,13 +76,17 @@ class FakeResend(BaseHTTPRequestHandler):
             TODO[tid]["checked"] = path.endswith("/close")
             return self._json(204)
         if path == "/tasks":
-            t = {"id": f"t{next(TODO_IDS)}", "content": body["content"], "description": body.get("description", ""),
-                 "parent_id": body.get("parent_id"), "project_id": body.get("project_id"), "checked": False}
+            par = TODO.get(body.get("parent_id")) or {}
+            t = {"id": f"t{next(TODO_IDS)}", "content": body["content"], "description": body.get("description", ""), "parent_id": body.get("parent_id"),
+                 "project_id": body.get("project_id") or par.get("project_id") or "inbox", "responsible_uid": body.get("assignee_id"),
+                 "added_by_uid": "u1", "checked": False}
             TODO[t["id"]] = t
             return self._json(200, t)
         tid = path.rsplit("/", 1)[-1]
         if tid not in TODO:
             return self._json(404, {"error": "not found"})
+        if "assignee_id" in body:
+            body = {**body, "responsible_uid": body.pop("assignee_id")}
         TODO[tid].update(body)
         return self._json(200, TODO[tid])
 
@@ -445,8 +458,9 @@ def run():
     s, d = send("Casey Test", w9, two, use)
     parents = [t for t in TODO.values() if not t["parent_id"]]
     check(s == 200 and d["todoist"] == {"projects": 2, "steps": 3, "closed": 0}, f"send creates a task per project and its next steps: {d.get('todoist')}")
-    check(sorted(t["content"] for t in parents) == ["Pipeline Hygiene", "Territory Map"] and all(not t["project_id"] for t in parents),
-          "projects are tasks in the Inbox (no Todoist project)")
+    check(sorted(t["content"] for t in parents) == ["Pipeline Hygiene", "Territory Map"] and all(t["project_id"] == "wp" for t in TODO.values()),
+          "projects and their steps go in the Weekly Progress project")
+    check(all(t["responsible_uid"] == "u1" for t in TODO.values()), "the sender owns (is assigned) each task and subtask")
     pid = next(t["id"] for t in parents if t["content"] == "Pipeline Hygiene")
     check(sorted(t["content"] for t in TODO.values() if t["parent_id"] == pid) == ["Close out Q4 list", "Merge duplicates"], "next steps are its subtasks")
     s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Close out Q4 list", "merge duplicates", "Send to finance"]}, two[1]], use)
@@ -457,7 +471,8 @@ def run():
     s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Send to finance", "Book the review"]}, two[1]], use)
     check(d["todoist"]["closed"] == 2 and sub["Close out Q4 list"]["checked"] and sub["Merge duplicates"]["checked"]
           and not sub["Send to finance"]["checked"] and d["todoist"]["steps"] == 1, "steps taken off the list are checked off; the rest stay")
-    TODO["mine"] = {"id": "mine", "content": "My own subtask", "description": "", "parent_id": pid, "project_id": None, "checked": False}
+    TODO["mine"] = {"id": "mine", "content": "My own subtask", "description": "", "parent_id": pid, "project_id": "wp", "responsible_uid": None,
+                    "added_by_uid": "u1", "checked": False}
     s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Send to finance"]}, two[1]], use)
     check(not TODO["mine"]["checked"], "a subtask added in Todoist by hand is left alone")
     TODO[pid]["checked"] = True                      # project ticked off in Todoist, then sent again
@@ -467,10 +482,26 @@ def run():
     TODO.pop(tid)                                    # deleted in Todoist
     s, d = send("Casey Test", w9, two, use)
     check(len([t for t in TODO.values() if not t["parent_id"] and t["content"] == "Territory Map"]) == 1, "a deleted project task is made again, once")
-    TODO["own"] = {"id": "own", "content": "renewal  playbook", "description": "", "parent_id": None, "project_id": None, "checked": False}
+    TODO["own"] = {"id": "own", "content": "renewal  playbook", "description": "", "parent_id": None, "project_id": "wp", "responsible_uid": None,
+                   "added_by_uid": "u1", "checked": False}
+    TODO["theirs"] = {"id": "theirs", "content": "Renewal Playbook", "description": "", "parent_id": None, "project_id": "wp", "responsible_uid": "u2",
+                      "added_by_uid": "u2", "checked": False}
     s, d = send("Casey Test", w9, [*two, proj("Renewal Playbook", "Claude", "", ["Started"], "1-3 hrs", steps=["Outline"])], use)
-    check(len([t for t in TODO.values() if not t["parent_id"] and _n(t["content"]) == "renewal playbook"]) == 1
-          and TODO["own"]["content"] == "Renewal Playbook", "an open task with the project's name is used, not duplicated")
+    check(len([t for t in TODO.values() if not t["parent_id"] and _n(t["content"]) == "renewal playbook" and t["id"] != "theirs"]) == 1
+          and TODO["own"]["content"] == "Renewal Playbook" and TODO["own"]["responsible_uid"] == "u1", "an open task of theirs with the project's name is used, not duplicated")
+    check(TODO["theirs"]["responsible_uid"] == "u2" and TODO["theirs"]["description"] == "", "someone else's task with the same name is left alone")
+    TODO[pid]["project_id"] = "inbox"                # made before the project existed
+    for t in TODO.values():
+        if t["parent_id"] == pid:
+            t["project_id"] = "inbox"
+    s, d = send("Casey Test", w9, two, use)
+    check(all(t["project_id"] == "wp" for t in TODO.values() if t["id"] == pid or t["parent_id"] == pid), "an Inbox task moves into Weekly Progress with its steps")
+    PROJECTS.pop()                                   # not a member of the project
+    s, d = send("Casey Test", w9, [proj("Solo Thing", "Claude", "", ["Started"], "1-3 hrs", steps=["First step"])], use)
+    solo = next(t for t in TODO.values() if t["content"] == "Solo Thing")
+    check(solo["project_id"] == "inbox" and not solo["responsible_uid"] and "not in the Weekly Progress project" in d["todoist"].get("note", ""),
+          "no Weekly Progress project: Inbox, with a note")
+    PROJECTS.append({"id": "wp", "name": "Weekly Progress", "is_shared": True})
     call("DELETE", f"/api/todoist?name=Casey%20Test"); call("POST", "/api/todoist", {"name": "Casey Test", "token": GOOD_TOKEN})
     n_before = len(TODO)
     s, d = send("Casey Test", w9, two, use)

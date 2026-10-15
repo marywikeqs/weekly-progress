@@ -160,11 +160,11 @@ button:disabled{opacity:.6;cursor:default}
     <h2>Todoist <span class="opt">Optional</span></h2>
     <div class="card" id="todo-card">
       <div id="todo-on" hidden>
-        <p style="margin:0"><span style="color:var(--green)">✓</span> <strong>Connected.</strong> From now on, each project you send goes to your Todoist Inbox as a task, with its next steps as subtasks.
+        <p style="margin:0"><span style="color:var(--green)">✓</span> <strong>Connected.</strong> From now on, each project you send goes to the Weekly Progress project in Todoist as a task assigned to you, with its next steps as subtasks.
           You won't see this box again.</p>
       </div>
       <div id="todo-setup" hidden>
-        <p class="hint" style="margin:0 0 8px">Send each project to your own Todoist as a task, with its next steps as subtasks. Paste your API token from Todoist: Settings → Integrations → Developer.</p>
+        <p class="hint" style="margin:0 0 8px">Send each project to the Weekly Progress project in Todoist as a task assigned to you, with its next steps as subtasks. Paste your API token from Todoist: Settings → Integrations → Developer.</p>
         <div style="display:flex;gap:10px"><input id="todo-token" type="password" autocomplete="off" spellcheck="false" placeholder="Todoist API token" aria-label="Todoist API token" style="flex:1">
           <button type="button" class="ghost" id="todo-connect" style="padding:9px 16px">Connect</button></div>
         <div class="card-err" id="todo-err" hidden></div>
@@ -772,7 +772,8 @@ function showDone(r) {
       ${r.tasks.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.note)}</span></li>`).join('')}</ul>
     ${!r.todoist ? '' : r.todoist.error
       ? `<p class="note" style="margin-top:16px">Your update is saved, but it didn't reach Todoist: ${esc(r.todoist.error)}</p>`
-      : `<p class="sub" style="margin-top:16px">Sent to your Todoist: ${r.todoist.projects} project${r.todoist.projects === 1 ? '' : 's'}, ${r.todoist.steps} new next step${r.todoist.steps === 1 ? '' : 's'}${r.todoist.closed ? `, ${r.todoist.closed} finished step${r.todoist.closed === 1 ? '' : 's'} checked off` : ''}.</p>`}
+      : `<p class="sub" style="margin-top:16px">Sent to your Todoist: ${r.todoist.projects} project${r.todoist.projects === 1 ? '' : 's'}, ${r.todoist.steps} new next step${r.todoist.steps === 1 ? '' : 's'}${r.todoist.closed ? `, ${r.todoist.closed} finished step${r.todoist.closed === 1 ? '' : 's'} checked off` : ''}.</p>`
+        + (r.todoist.note ? `<p class="note">${esc(r.todoist.note)}</p>` : '')}
     <p style="margin:24px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
   $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;
   $('edit').onclick = load;

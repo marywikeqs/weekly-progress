@@ -1,11 +1,13 @@
 """Sends a person's projects to their own Todoist when they submit.
 
-Each project is one task (in their Inbox when first made), with its next steps
-as subtasks. A project is never created twice:
+Each project is one task in the shared "Weekly Progress" Todoist project
+(their Inbox if they're not in it yet), assigned to the person who sent it,
+with its next steps as subtasks. A project is never created twice:
   * its task id is kept, and reused every week, wherever the task was moved;
   * a completed project task is reopened rather than replaced;
   * with no id on file (a deleted task, a reconnected account), an open task
-    with the same name is adopted before a new one is made.
+    of theirs with the same name is adopted before a new one is made;
+  * tasks made before the project existed are moved into it.
 Next steps follow the form: new ones are added, ones already open aren't
 added again, and steps this app added that drop off the list are completed.
 Subtasks the person added in Todoist themselves are left alone.
@@ -83,15 +85,41 @@ def describe(u: dict) -> str:
     return "From Weekly Progress · " + " · ".join(b for b in bits if b)
 
 
+PROJECT_NAME = "Weekly Progress"
+
+
+def _where(token: str):
+    """(project, my user id): the shared Weekly Progress project if this person can see it, else (None, id)."""
+    me = (_call(token, "GET", "/user") or {}).get("id")
+    matches = [p for p in _all(token, "/projects") if _norm(p.get("name")) == _norm(PROJECT_NAME) and not p.get("is_archived")]
+    matches.sort(key=lambda p: not p.get("is_shared"))           # the shared one first
+    return (matches[0] if matches else None), me
+
+
+def _mine(t: dict, me) -> bool:
+    who = t.get("responsible_uid") or t.get("assignee_id")
+    return (who == me) if who else (t.get("added_by_uid") or t.get("creator_id")) == me
+
+
 def send(token: str, projects: list, known: dict) -> dict:
-    """One task per project, next steps as its subtasks, nothing duplicated.
+    """One task per project in the Weekly Progress project, next steps as its
+    subtasks, the sender as owner (assignee), nothing duplicated.
 
     known maps a lower-cased project name to {"id": task id, "steps": {step: subtask id}}
     (an older plain id string is accepted); it's updated in place.
-    Returns {"projects": n, "steps": added, "closed": n} or raises TodoistError.
+    Returns {"projects": n, "steps": added, "closed": n[, "note": ...]} or raises TodoistError.
     """
     out = {"projects": 0, "steps": 0, "closed": 0}
-    open_tops = None          # open top-level tasks by name, fetched only if needed
+    proj, me = _where(token)
+    pid = proj["id"] if proj else None
+    shared = bool(proj and proj.get("is_shared"))              # Todoist only takes an assignee in a shared project
+    assign = shared and bool(me)
+    if not proj:
+        out["note"] = (f"You're not in the {PROJECT_NAME} project in Todoist yet, so these went to your Inbox. "
+                       "Once you're added, your next send moves them there.")
+    owner = {"assignee_id": me} if assign else {}
+    where = {"project_id": pid} if pid else {}
+    open_tops = None          # my open top-level tasks there, by name; fetched only if needed
     for u in projects:
         key = u["project"].lower()
         rec = known.get(key)
@@ -104,21 +132,31 @@ def send(token: str, projects: list, known: dict) -> dict:
         if not task:
             if open_tops is None:
                 open_tops = {}
-                for t in _all(token, "/tasks"):
-                    if not t.get("parent_id"):
+                for t in _all(token, "/tasks", **where):
+                    if not t.get("parent_id") and _mine(t, me):          # never someone else's task
                         open_tops.setdefault(_norm(t.get("content")), t)
             task = open_tops.get(_norm(u["project"]))
             if not task:
-                task = _call(token, "POST", "/tasks", {"content": u["project"], "description": describe(u)})
+                task = _call(token, "POST", "/tasks", {"content": u["project"], "description": describe(u), **where, **owner})
                 if not task or not task.get("id"):
                     raise TodoistError("Todoist didn't create the task.")
                 open_tops[_norm(u["project"])] = task
             rec = {"id": task["id"], "steps": {}}
-        _call(token, "POST", f"/tasks/{task['id']}", {"content": u["project"], "description": describe(u)})
+        if shared and not me:      # no user id from /user: whoever made this person's task is them
+            me = task.get("added_by_uid") or task.get("creator_id")
+            assign, owner = bool(me), ({"assignee_id": me} if me else {})
+        if pid and task.get("project_id") != pid:
+            _call(token, "POST", f"/tasks/{task['id']}/move", {"project_id": pid})   # its subtasks come along
+        _call(token, "POST", f"/tasks/{task['id']}", {"content": u["project"], "description": describe(u),
+                                                     **(owner if not (task.get("responsible_uid") or task.get("assignee_id")) else {})})
 
         subs = [t for t in _all(token, "/tasks", parent_id=task["id"]) if not _done(t)]
         open_by_text = {_norm(t.get("content")): t["id"] for t in subs}
         open_ids = {t["id"] for t in subs}
+        if assign:      # subtasks with no owner yet become the sender's
+            for t in subs:
+                if not (t.get("responsible_uid") or t.get("assignee_id")):
+                    _call(token, "POST", f"/tasks/{t['id']}", owner)
         want, steps = set(), {}
         for step in u.get("nextSteps", []):
             n = _norm(step)
@@ -128,7 +166,7 @@ def send(token: str, projects: list, known: dict) -> dict:
             if n in open_by_text:
                 steps[n] = rec["steps"].get(n) or open_by_text[n]
             else:
-                t = _call(token, "POST", "/tasks", {"content": step, "parent_id": task["id"]})
+                t = _call(token, "POST", "/tasks", {"content": step, "parent_id": task["id"], **owner})
                 steps[n] = (t or {}).get("id")
                 out["steps"] += 1
         # steps this app added that are no longer next steps: done or dropped, so complete them
