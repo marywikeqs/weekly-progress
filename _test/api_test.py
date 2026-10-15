@@ -434,6 +434,12 @@ def run():
     mine = call("GET", f"/api/mine?name=Casey%20Test&week={w9}")[1]
     check(mine["todoist"] is True and GOOD_TOKEN not in json.dumps(mine), "mine says connected, never returns the token")
     check(call("GET", f"/api/mine?name=Blake%20Test&week={w9}")[1]["todoist"] is False, "Todoist is per person")
+    adm = call("GET", "/api/admin", auth=ADMIN)[1]
+    check(adm["todoist"]["Casey Test"] is True and adm["todoist"]["Blake Test"] is False and GOOD_TOKEN not in json.dumps(adm),
+          "admin sees who's connected, never the token")
+    check(call("POST", "/api/todoist", {"name": "Blake Test", "token": GOOD_TOKEN}, auth=ADMIN)[0] == 200
+          and call("GET", "/api/admin", auth=ADMIN)[1]["todoist"]["Blake Test"] is True, "admin connects someone's Todoist")
+    check(call("DELETE", "/api/todoist?name=Blake%20Test", auth=ADMIN)[0] == 200, "admin disconnects it")
     two = [proj("Pipeline Hygiene", "Claude", "", ["Cleaned"], "1-3 hrs", steps=["Close out Q4 list", "Merge duplicates"]),
            proj("Territory Map", "Non-Claude", "", ["Drafted"], steps=["Review with Cora"])]
     s, d = send("Casey Test", w9, two, use)

@@ -31,7 +31,7 @@ h2{font-size:15px;margin:34px 0 0;padding-bottom:6px;border-bottom:1px solid var
 .item label input{accent-color:var(--accent)}
 .ring{flex:none;width:16px;height:16px;border-radius:50%;border:2px solid var(--faint)}
 .item:not(.off) .ring{border-color:var(--done)}
-input[type=text],input[type=email],select,textarea{font:inherit;font-size:14px;padding:7px 9px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink)}
+input[type=text],input[type=email],input[type=password],select,textarea{font:inherit;font-size:14px;padding:7px 9px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink)}
 textarea{width:100%;min-height:80px;margin-top:6px}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--faint);box-shadow:0 0 0 2px var(--focus)}
 select{font-size:12.5px;padding:4px 6px;color:var(--muted)}
@@ -64,7 +64,7 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <a href="/report">Weekly report</a>
   <a href="/">The form</a>
   <div class="sep"></div>
-  <a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#sends">Sends</a>
+  <a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#todoist">Todoist</a><a href="#sends">Sends</a>
   <div class="sep"></div>
   <a href="/export/updates.csv">All project updates (CSV)</a><a href="/export/tasks.csv">All other work (CSV)</a><a href="/export/usage.csv">All usage (CSV)</a>
 </aside>
@@ -102,6 +102,10 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <p class="hint">Shown above the screenshot upload. Name the screen and the date range so everyone's screenshots match.</p>
   <textarea id="howto-text" maxlength="2000"></textarea>
 
+  <h2 id="todoist">Todoist</h2>
+  <p class="hint">Connect someone's Todoist and each project they send becomes a task in their Todoist, with its next steps as subtasks. Paste their API token (Todoist: Settings → Integrations → Developer). Tokens are kept on the server and never shown again. People can also connect themselves at the bottom of the form.</p>
+  <ul class="learned" id="todo-list"></ul>
+
   <h2 id="sends">Sends</h2>
   <p class="hint">Every update sent, newest week first. Delete removes that person's whole send for the week (projects, other work, usage and screenshot), for test sends or mistakes. It can't be undone. To change a send instead, open the form, pick the name and week, edit and send again.</p>
   <ul class="learned" id="send-list"></ul>
@@ -123,7 +127,7 @@ async function load() {
   state = d.config; learned = d.learned; email = d.email;
   $('howto-text').value = state.screenshotInstructions || '';
   $('report-email').value = state.reportEmail || '';
-  render(); renderEmail(); renderSends(d.sends || []);
+  render(); renderEmail(); renderSends(d.sends || []); renderTodoist(d.todoist || {});
   if (!d.writable) setStatus('The server can\'t save: its storage isn\'t writable', 'err');
   else if (!d.persistent) setStatus('No volume attached: everything resets on the next deploy', 'err');
   else setStatus('All changes saved');
@@ -199,6 +203,32 @@ function renderSends(sends) {
       if (!dirty) setStatus(`Deleted ${x.name}'s send for the week ending ${fmtWeek(x.week)}`, 'ok');
     } catch (e) { b.disabled = false; b.textContent = 'Delete'; setStatus('Not deleted: ' + e.message, 'err'); }
   });
+}
+// ---- Todoist: connect or disconnect each person's account ----
+function renderTodoist(linked) {
+  const people = state.roster.filter(p => p.name && p.active);
+  $('todo-list').innerHTML = people.map((p, i) => `<li><div class="grow"><strong>${esc(p.name)}</strong>
+    <small id="todo-st-${i}">${linked[p.name] ? '✓ Connected' : 'Not connected'}</small></div>
+    ${linked[p.name] ? `<button class="ghost" type="button" data-toff="${i}">Disconnect</button>`
+      : `<input type="password" autocomplete="off" spellcheck="false" placeholder="API token" aria-label="Todoist API token for ${esc(p.name)}" data-ttok="${i}" style="width:180px">
+         <button class="ghost" type="button" data-ton="${i}">Connect</button>`}</li>`).join('');
+  const call = async (i, method, body) => {
+    const name = people[i].name, st = $('todo-st-' + i);
+    st.textContent = method === 'POST' ? 'Checking with Todoist…' : 'Disconnecting…';
+    try {
+      const r = await fetch(method === 'POST' ? '/api/todoist' : `/api/todoist?name=${encodeURIComponent(name)}`,
+                            {method, headers: {'Content-Type': 'application/json'}, body: body ? JSON.stringify(body) : undefined});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      renderTodoist({...linked, [name]: d.todoist});
+    } catch (e) { st.textContent = 'Not changed: ' + e.message; st.style.color = 'var(--p1)'; }
+  };
+  document.querySelectorAll('[data-ton]').forEach(b => b.onclick = () => {
+    const tok = document.querySelector(`[data-ttok="${b.dataset.ton}"]`).value.trim();
+    if (!tok) { $('todo-st-' + b.dataset.ton).textContent = 'Paste the API token first.'; return; }
+    call(b.dataset.ton, 'POST', {name: people[b.dataset.ton].name, token: tok});
+  });
+  document.querySelectorAll('[data-toff]').forEach(b => b.onclick = () => call(b.dataset.toff, 'DELETE'));
 }
 $('howto-text').oninput = () => { state.screenshotInstructions = $('howto-text').value; touch(); };
 $('report-email').oninput = () => { state.reportEmail = $('report-email').value; touch(); };

@@ -651,6 +651,7 @@ class Handler(BaseHTTPRequestHandler):
                         o["at"] = max(o["at"], x.get("updatedAt") or x.get("submittedAt") or "")
                 sends = sorted(sends.values(), key=lambda o: (o["week"], o["at"]), reverse=True)
                 return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()), "email": email, "sends": sends,
+                                            "todoist": {p["name"]: p["name"] in DATA["todoist"]["tokens"] for p in DATA["config"]["roster"]},
                                             "weeks": report.weeks_with_data(DATA), "writable": WRITABLE, "persistent": state_persistent()})
         if path in ("/report", "/report.txt"):
             if not self.gate("admin"):
