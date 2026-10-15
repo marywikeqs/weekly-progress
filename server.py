@@ -437,7 +437,8 @@ USAGE_COLS = [
     ("Reason", lambda r: (r.get("increase") or {}).get("reason", "")),
     ("Request status", lambda r: (r.get("increase") or {}).get("status", "")),
     ("Where Claude could have helped", lambda r: r.get("retro", "")),
-    ("Upcoming project ideas", lambda r: "\n".join("• " + i["idea"] + (f" — {i['why']}" if i.get("why") else "") for i in r.get("ideas", []))),
+    ("Upcoming project ideas", lambda r: "\n".join("• " + i["idea"] + (f" [{report.IDEA_STATUS[i['status']]}]" if i.get("status") in report.IDEA_STATUS else "")
+                                                     + (f" — {i['why']}" if i.get("why") else "") for i in r.get("ideas", []))),
     ("Screenshot", lambda r: f"/screenshots/{r['screenshot']}" if r.get("screenshot") else ""),
     ("Submitted", lambda r: r.get("submittedAt", "")), ("Last updated", lambda r: r.get("updatedAt", "")),
 ]
@@ -556,7 +557,7 @@ class Handler(BaseHTTPRequestHandler):
                 "roster": [p["name"] for p in cfg["roster"] if p["active"]],
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
-                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "requestStatuses": REQUEST_STATUSES,
+                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_STATUS, "requestStatuses": REQUEST_STATUSES,
                 "taskCategories": task_categories(),
                 "writable": WRITABLE, "persistent": state_persistent(),
             })
@@ -689,9 +690,12 @@ class Handler(BaseHTTPRequestHandler):
                 why = re.sub(r"\s+", " ", str(x.get("why") or "")).strip()[:300]
                 if not idea and not why:
                     continue
+                status = x.get("status")
                 if not idea:
                     errors.append({"idea": i, "error": "Name the idea."})
-                ideas.append({"idea": idea, "why": why})
+                elif status not in report.IDEA_STATUS:
+                    errors.append({"idea": i, "error": "Say whether you could start it soon or would push for it."})
+                ideas.append({"idea": idea, "why": why, "status": status})
             ideas = ideas[:10]
             cur_use = next((r for r in DATA["usage"] if r["name"] == name and r["week"] == week), None)
             shot = cur_use.get("screenshot") if cur_use else None

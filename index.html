@@ -69,7 +69,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 #tasks:empty+.add-line{margin-top:0}
 .add-line{background:none;border:0;font:inherit;font-weight:600;color:var(--accent);cursor:pointer;padding:6px 0;margin-top:8px}
 #tasks-empty,#ideas-empty{color:var(--muted);font-size:14px;margin:0 0 4px}
-.idea .i-why{margin-top:8px}.idea .i-idea{flex:1}
+.idea .i-why{margin-top:8px}.idea .seg{margin-top:8px}.idea .seg label{font-size:14px}.idea .i-idea{flex:1}
 .note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;margin-bottom:12px}
 .instructions{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-line;margin-bottom:8px}
 .preview{margin-top:8px;max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;display:none}
@@ -562,17 +562,22 @@ function addIdea(x = {}) {
   el.innerHTML = `<div class="foot" style="margin-top:0"><input class="i-idea" maxlength="120" placeholder="The idea, e.g. Auto-build QBR decks" aria-label="Project idea">
       <button type="button" class="remove" aria-label="Remove this idea">Remove</button></div>
     <input class="i-why" maxlength="300" placeholder="Why it's worth doing" aria-label="Why it's worth doing">
+    <div class="seg i-status">${Object.entries(CFG.ideaStatus).map(([v, l]) => `<label><input type="radio" name="ist${++ideaSeq}" value="${v}"> ${esc(l)}</label>`).join('')}</div>
     <div class="t-err" hidden></div>`;
   const q = s => el.querySelector(s);
   q('.i-idea').value = x.idea || ''; q('.i-why').value = x.why || '';
+  if (x.status) { const r = q(`.i-status input[value="${x.status}"]`); if (r) r.checked = true; }
+  el.addEventListener('change', () => { el.querySelectorAll('.invalid').forEach(i => i.classList.remove('invalid')); q('.t-err').hidden = true; });
   el.addEventListener('input', () => { el.querySelectorAll('.invalid').forEach(i => i.classList.remove('invalid')); q('.t-err').hidden = true; });
   q('.remove').onclick = () => { el.remove(); ideasEmpty(); };
   $('ideas').append(el);
   ideasEmpty();
   return el;
 }
+let ideaSeq = 0;
 function ideasEmpty() { $('ideas-empty').hidden = !!$('ideas').children.length; }
-const readIdea = el => ({idea: el.querySelector('.i-idea').value.trim(), why: el.querySelector('.i-why').value.trim()});
+const readIdea = el => ({idea: el.querySelector('.i-idea').value.trim(), why: el.querySelector('.i-why').value.trim(),
+                         status: el.querySelector('.i-status input:checked')?.value || null});
 
 // ---- usage ----
 function incValue() { const r = document.querySelector('input[name=inc]:checked'); return r ? r.value === 'yes' : null; }
@@ -648,13 +653,16 @@ async function send(ev) {
     taskError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
     if (bad.length && !firstBad) firstBad = el;
   });
-  // ideas: blank ones are skipped; a "why" needs the idea itself
-  const ideaEls = [...document.querySelectorAll('.idea')].filter(el => { const d = readIdea(el); return d.idea || d.why; });
+  // ideas: blank ones are skipped; a "why" needs the idea itself, and each says whether we could start it or would push for it
+  const ideaEls = [...document.querySelectorAll('.idea')].filter(el => { const d = readIdea(el); return d.idea || d.why || d.status; });
   ideaEls.forEach(el => {
-    const ok = !!readIdea(el).idea;
-    el.querySelector('.i-idea').classList.toggle('invalid', !ok);
-    taskError(el, ok ? '' : 'Name the idea.');
-    if (!ok && !firstBad) firstBad = el;
+    const d = readIdea(el), errs = [];
+    el.querySelector('.i-idea').classList.toggle('invalid', !d.idea);
+    el.querySelector('.i-status').classList.toggle('invalid', !d.status);
+    if (!d.idea) errs.push('Name the idea.');
+    if (!d.status) errs.push('Say whether you could start it soon or would push for it.');
+    taskError(el, errs.join(' '));
+    if (errs.length && !firstBad) firstBad = el;
   });
   if (!$('retro').value.trim()) {
     $('retro').classList.add('invalid'); $('retro-err').textContent = 'Say where Claude could have helped, or write "Nothing this week".'; $('retro-err').hidden = false;
