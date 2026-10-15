@@ -14,8 +14,8 @@ from html import escape
 
 # Time-saved ranges counted at their midpoints.
 TIME_SAVED_HOURS = {"None": 0, "Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5+ hrs": 6}
-# upcoming ideas: where each one stands, from ready to go to just a thought
-IDEA_CHOICES = {"start": "Ready to start", "discuss": "Let's discuss", "idea": "Just an idea"}
+# upcoming ideas: where each one stands ("start" = ready to go, just needs sign-off)
+IDEA_CHOICES = {"start": "Need a greenlight", "discuss": "Let's discuss", "idea": "Just an idea"}
 IDEA_STATUS = {**IDEA_CHOICES, "push": "Let's discuss"}      # "push" was sent for a day before the wording changed
 TIME_LEFT = ["1–2 days", "3–5 days", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date"]
 FLAG_AT = 80  # percent of budget

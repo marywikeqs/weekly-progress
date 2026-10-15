@@ -694,7 +694,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not idea:
                     errors.append({"idea": i, "error": "Name the idea."})
                 elif status not in report.IDEA_CHOICES:
-                    errors.append({"idea": i, "error": "Say where the idea stands: ready to start, let's discuss, or just an idea."})
+                    errors.append({"idea": i, "error": "Say where the idea stands: need a greenlight, let's discuss, or just an idea."})
                 ideas.append({"idea": idea, "why": why, "status": status})
             ideas = ideas[:10]
             cur_use = next((r for r in DATA["usage"] if r["name"] == name and r["week"] == week), None)

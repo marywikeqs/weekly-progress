@@ -292,9 +292,9 @@ def run():
     check("⏳ 2–4 weeks left" in html, "time left shown on each project")
     check("👤 Solo" in html and "👥 With Blake Test, Finance team" in html, "solo / with whom shown (duplicates dropped)")
     check('id="ideas"' in html and "Auto-build QBR decks" in html and "Saves about 2 hrs per QBR" in html and "Renewal alerts" in html, "ideas section, blank idea dropped")
-    check("Ready to start" in html and "Just an idea" in html, "ideas show where they stand")
+    check("Need a greenlight" in html and "Just an idea" in html, "ideas show where they stand")
     s, t1 = call("GET", f"/report.txt?week={w1}", auth=ADMIN, raw=True)
-    check("(2–4 weeks left)" in t1.decode() and "Avery Test: Auto-build QBR decks [Ready to start] — Saves about 2 hrs per QBR" in t1.decode(), "Slack text has time left and ideas")
+    check("(2–4 weeks left)" in t1.decode() and "Avery Test: Auto-build QBR decks [Need a greenlight] — Saves about 2 hrs per QBR" in t1.decode(), "Slack text has time left and ideas")
     check('id="glance"' in html and html.index('id="glance"') < html.index('id="digest"'), "At a glance comes before the full breakdown")
     check("Gone Test" not in html and "Everyone is in" in html, "everyone in; inactive people not counted")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
@@ -319,7 +319,7 @@ def run():
     import csv as _csv
     rows = list(_csv.reader(io.StringIO(b.decode("utf-8-sig"))))
     check(s == 200 and len(rows) == 5, "usage CSV filtered to a week (header + 4)")
-    check(any("• Auto-build QBR decks [Ready to start] — Saves about 2 hrs per QBR\n• Renewal alerts [Just an idea]" in c for r in rows for c in r), "usage CSV has the ideas")
+    check(any("• Auto-build QBR decks [Need a greenlight] — Saves about 2 hrs per QBR\n• Renewal alerts [Just an idea]" in c for r in rows for c in r), "usage CSV has the ideas")
 
     print("drafts")
     w8 = (fri + timedelta(days=21)).isoformat()
