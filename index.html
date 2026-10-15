@@ -155,12 +155,13 @@ button:disabled{opacity:.6;cursor:default}
       <div class="card-err" id="usage-err" hidden></div>
     </div>
 
+    <!-- shown only until the person is connected; after that it's one and done (disconnect is on the admin page) -->
+    <div id="todo-wrap" hidden>
     <h2>Todoist <span class="opt">Optional</span></h2>
     <div class="card" id="todo-card">
       <div id="todo-on" hidden>
-        <p style="margin:0"><span style="color:var(--green)">✓</span> <strong>Connected.</strong> When you send, each project goes to your Todoist Inbox as a task, with its next steps as subtasks.
-          A project is only ever created once: after that its task is updated, new next steps are added, and steps you've taken off the list are checked off.
-          <button type="button" class="linkish" id="todo-off">Disconnect</button></p>
+        <p style="margin:0"><span style="color:var(--green)">✓</span> <strong>Connected.</strong> From now on, each project you send goes to your Todoist Inbox as a task, with its next steps as subtasks.
+          You won't see this box again.</p>
       </div>
       <div id="todo-setup" hidden>
         <p class="hint" style="margin:0 0 8px">Send each project to your own Todoist as a task, with its next steps as subtasks. Paste your API token from Todoist: Settings → Integrations → Developer.</p>
@@ -168,6 +169,7 @@ button:disabled{opacity:.6;cursor:default}
           <button type="button" class="ghost" id="todo-connect" style="padding:9px 16px">Connect</button></div>
         <div class="card-err" id="todo-err" hidden></div>
       </div>
+    </div>
     </div>
   </form>
 </div>
@@ -247,7 +249,6 @@ async function init() {
   $('add-task').onclick = () => addTask().querySelector('.t-cat').focus();
   $('add-idea').onclick = () => addIdea().querySelector('.i-idea').focus();
   $('todo-connect').onclick = todoConnect;
-  $('todo-off').onclick = todoDisconnect;
   $('todo-token').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); todoConnect(); } });
   $('add-tweak').onclick = () => addTweak().querySelector('.w-proj').focus();
   $('add').onclick = () => { foldFinished(); const c = addCard(); c.querySelector('.f-pick:not([hidden]), .f-new:not([hidden])').focus(); };
@@ -593,7 +594,8 @@ function taskError(el, text, fields = []) {
 
 // ---- Todoist: each person connects their own account once ----
 function todoShow() {
-  $('todo-on').hidden = !MINE.todoist; $('todo-setup').hidden = !!MINE.todoist;
+  $('todo-wrap').hidden = !!MINE.todoist;
+  $('todo-on').hidden = true; $('todo-setup').hidden = false;
   $('todo-token').value = ''; $('todo-err').hidden = true;
 }
 async function todoConnect() {
@@ -602,13 +604,10 @@ async function todoConnect() {
   btn.disabled = true; btn.textContent = 'Checking…';
   try {
     await api('/api/todoist', {method: 'POST', body: JSON.stringify({name: $('name').value, token})});
-    MINE.todoist = true; todoShow();
+    MINE.todoist = true;
+    $('todo-setup').hidden = true; $('todo-on').hidden = false;      // a confirmation now; gone from the next visit on
   } catch (e) { $('todo-err').textContent = e.message; $('todo-err').hidden = false; }
   btn.disabled = false; btn.textContent = 'Connect';
-}
-async function todoDisconnect() {
-  try { await api(`/api/todoist?name=${encodeURIComponent($('name').value)}`, {method: 'DELETE'}); MINE.todoist = false; todoShow(); }
-  catch (e) { msg(e.message, 'err'); }
 }
 
 // ---- tweaks: small changes to an existing project or tool ----

@@ -129,7 +129,7 @@ try:
         check(pg.locator("#retro").count() == 0, "no Looking back section")
         pg.fill("#spend", "75"); pg.fill("#budget", "250")
         check(pg.locator("input[name=inc]").count() == 0, "no budget increase question")
-        check(pg.is_visible("#todo-setup") and pg.is_hidden("#todo-on"), "Todoist: not connected shows how to connect")
+        check(pg.is_visible("#todo-wrap") and pg.is_visible("#todo-setup") and pg.is_hidden("#todo-on"), "Todoist: not connected shows how to connect")
         # draft: autosaves, survives a reload, nothing sent
         pg.wait_for_timeout(3600)
         check("Draft saved" in (pg.text_content("#msg") or ""), "autosaves a draft: " + (pg.text_content("#msg") or ""))
@@ -169,6 +169,8 @@ try:
               and pg.locator(".proj").nth(0).locator(".f-b").first.input_value() == "", "a new week carries over time left, not progress")
         check(pg.locator(".proj").nth(1).locator(".f-team").is_visible() and pg.locator(".proj").nth(1).locator(".chips input[value='Casey Test']").is_checked(),
               "a new week carries over who's working on it")
+        pg.select_option("#name", "Casey Test"); pg.wait_for_timeout(500)      # api_test left Casey connected
+        check(pg.is_hidden("#todo-wrap"), "Todoist: once connected, the box is gone from the form")
         ctx.close()
 
         # print layout of the report
