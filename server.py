@@ -83,6 +83,7 @@ MAX_BODY = 256 * 1024
 MAX_SHOT = 8 * 1024 * 1024          # the page shrinks big screenshots before sending
 SHOT_RX = re.compile(r"^[a-f0-9]{20}\.(png|jpg|webp)$")
 LOCK = threading.Lock()
+TODOIST_LOCKS: dict = {}      # one Todoist sync at a time per person, so two quick sends can't both create a task
 
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
@@ -815,14 +816,17 @@ class Handler(BaseHTTPRequestHandler):
             prefix = name + "|"
             known = {k[len(prefix):]: v for k, v in DATA["todoist"]["tasks"].items() if k.startswith(prefix)}
         if token:
-            # outside the lock: the update is already saved; Todoist trouble is reported, not fatal
-            try:
-                out["todoist"] = todoist.send(token, saved, known)
-            except todoist.TodoistError as e:
-                out["todoist"] = {"error": str(e)}
-            with LOCK:
-                DATA["todoist"]["tasks"].update({prefix + k: v for k, v in known.items()})
-                write("todoist")
+            # outside the main lock: the update is already saved; Todoist trouble is reported, not fatal
+            with TODOIST_LOCKS.setdefault(name, threading.Lock()):
+                with LOCK:
+                    known = {k[len(prefix):]: v for k, v in DATA["todoist"]["tasks"].items() if k.startswith(prefix)}
+                try:
+                    out["todoist"] = todoist.send(token, saved, known)
+                except todoist.TodoistError as e:
+                    out["todoist"] = {"error": str(e)}
+                with LOCK:
+                    DATA["todoist"]["tasks"].update({prefix + k: v for k, v in known.items()})
+                    write("todoist")
         return self.send_json(200, out)
 
     def todoist_link(self, method: str):
@@ -848,8 +852,7 @@ class Handler(BaseHTTPRequestHandler):
                 DATA["todoist"]["tokens"][name] = token
             else:
                 DATA["todoist"]["tokens"].pop(name, None)
-            # a new or removed account starts afresh
-            DATA["todoist"]["tasks"] = {k: v for k, v in DATA["todoist"]["tasks"].items() if not k.startswith(name + "|")}
+            # project task ids are kept: reconnecting the same account carries on with the same tasks
             if not write("todoist"):
                 DATA["todoist"] = before
                 return self.unsaved()

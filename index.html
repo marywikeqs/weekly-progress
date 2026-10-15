@@ -159,7 +159,7 @@ button:disabled{opacity:.6;cursor:default}
     <div class="card" id="todo-card">
       <div id="todo-on" hidden>
         <p style="margin:0"><span style="color:var(--green)">✓</span> <strong>Connected.</strong> When you send, each project goes to your Todoist Inbox as a task, with its next steps as subtasks.
-          A project you've sent before is reused, and a step that's already there isn't added again.
+          A project is only ever created once: after that its task is updated, new next steps are added, and steps you've taken off the list are checked off.
           <button type="button" class="linkish" id="todo-off">Disconnect</button></p>
       </div>
       <div id="todo-setup" hidden>
@@ -773,7 +773,7 @@ function showDone(r) {
       ${r.tasks.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.note)}</span></li>`).join('')}</ul>
     ${!r.todoist ? '' : r.todoist.error
       ? `<p class="note" style="margin-top:16px">Your update is saved, but it didn't reach Todoist: ${esc(r.todoist.error)}</p>`
-      : `<p class="sub" style="margin-top:16px">Sent to your Todoist: ${r.todoist.projects} project${r.todoist.projects === 1 ? '' : 's'}, ${r.todoist.steps} new next step${r.todoist.steps === 1 ? '' : 's'}.</p>`}
+      : `<p class="sub" style="margin-top:16px">Sent to your Todoist: ${r.todoist.projects} project${r.todoist.projects === 1 ? '' : 's'}, ${r.todoist.steps} new next step${r.todoist.steps === 1 ? '' : 's'}${r.todoist.closed ? `, ${r.todoist.closed} finished step${r.todoist.closed === 1 ? '' : 's'} checked off` : ''}.</p>`}
     <p style="margin:24px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
   $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;
   $('edit').onclick = load;

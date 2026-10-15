@@ -11,6 +11,7 @@ report can be looked at afterwards (python _test/api_test.py --keep serves it).
 
 import base64
 import io
+import itertools
 import json
 import os
 import shutil
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import threading
 import zlib
@@ -37,6 +39,7 @@ SENT = []          # emails the fake Resend received
 
 
 TODO = {}          # the fake Todoist's tasks, by id
+TODO_IDS = itertools.count(1)
 GOOD_TOKEN = "a1" * 20
 
 
@@ -50,14 +53,21 @@ class FakeResend(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != f"Bearer {GOOD_TOKEN}":
             return self._json(401, {"error": "bad token"})
         path, _, query = self.path[len("/todoist"):].partition("?")
-        q = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}") if method == "POST" else {}
         if path == "/projects":
             return self._json(200, {"results": [{"id": "inbox"}], "next_cursor": None})
-        if path == "/tasks" and method == "GET":
-            return self._json(200, {"results": [t for t in TODO.values() if t.get("parent_id") == q.get("parent_id")], "next_cursor": None})
+        if path == "/tasks" and method == "GET":     # active tasks only
+            return self._json(200, {"results": [t for t in TODO.values() if not t["checked"] and ("parent_id" not in q or t.get("parent_id") == q["parent_id"])],
+                                    "next_cursor": None})
+        if path.endswith("/close") or path.endswith("/reopen"):
+            tid = path.split("/")[2]
+            if tid not in TODO:
+                return self._json(404, {"error": "not found"})
+            TODO[tid]["checked"] = path.endswith("/close")
+            return self._json(204)
         if path == "/tasks":
-            t = {"id": f"t{len(TODO) + 1}", "content": body["content"], "description": body.get("description", ""),
+            t = {"id": f"t{next(TODO_IDS)}", "content": body["content"], "description": body.get("description", ""),
                  "parent_id": body.get("parent_id"), "project_id": body.get("project_id"), "checked": False}
             TODO[t["id"]] = t
             return self._json(200, t)
@@ -79,6 +89,10 @@ class FakeResend(BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+
+def _n(s):
+    return " ".join(s.split()).lower()
 
 
 def check(cond, label):
@@ -424,17 +438,37 @@ def run():
            proj("Territory Map", "Non-Claude", "", ["Drafted"], steps=["Review with Cora"])]
     s, d = send("Casey Test", w9, two, use)
     parents = [t for t in TODO.values() if not t["parent_id"]]
-    check(s == 200 and d["todoist"] == {"projects": 2, "steps": 3}, f"send creates a task per project and its next steps: {d.get('todoist')}")
+    check(s == 200 and d["todoist"] == {"projects": 2, "steps": 3, "closed": 0}, f"send creates a task per project and its next steps: {d.get('todoist')}")
     check(sorted(t["content"] for t in parents) == ["Pipeline Hygiene", "Territory Map"] and all(not t["project_id"] for t in parents),
           "projects are tasks in the Inbox (no Todoist project)")
     pid = next(t["id"] for t in parents if t["content"] == "Pipeline Hygiene")
     check(sorted(t["content"] for t in TODO.values() if t["parent_id"] == pid) == ["Close out Q4 list", "Merge duplicates"], "next steps are its subtasks")
     s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Close out Q4 list", "merge duplicates", "Send to finance"]}, two[1]], use)
-    check(d["todoist"] == {"projects": 2, "steps": 1} and len([t for t in TODO.values() if not t["parent_id"]]) == 2,
+    check(d["todoist"] == {"projects": 2, "steps": 1, "closed": 0} and len([t for t in TODO.values() if not t["parent_id"]]) == 2,
           "a resend reuses the project tasks and only adds new steps")
-    TODO[pid]["checked"] = True
+    sub = {t["content"]: t for t in TODO.values() if t["parent_id"] == pid}
+    check(d["todoist"]["closed"] == 0, "nothing checked off while all steps are still listed")
+    s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Send to finance", "Book the review"]}, two[1]], use)
+    check(d["todoist"]["closed"] == 2 and sub["Close out Q4 list"]["checked"] and sub["Merge duplicates"]["checked"]
+          and not sub["Send to finance"]["checked"] and d["todoist"]["steps"] == 1, "steps taken off the list are checked off; the rest stay")
+    TODO["mine"] = {"id": "mine", "content": "My own subtask", "description": "", "parent_id": pid, "project_id": None, "checked": False}
+    s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Send to finance"]}, two[1]], use)
+    check(not TODO["mine"]["checked"], "a subtask added in Todoist by hand is left alone")
+    TODO[pid]["checked"] = True                      # project ticked off in Todoist, then sent again
     s, d = send("Casey Test", w9, two, use)
-    check(len([t for t in TODO.values() if not t["parent_id"]]) == 3 and d["todoist"]["steps"] == 2, "a completed project task gets a fresh one")
+    check(len([t for t in TODO.values() if not t["parent_id"]]) == 2 and not TODO[pid]["checked"], "a completed project task is reopened, not duplicated")
+    tid = next(t["id"] for t in TODO.values() if t["content"] == "Territory Map")
+    TODO.pop(tid)                                    # deleted in Todoist
+    s, d = send("Casey Test", w9, two, use)
+    check(len([t for t in TODO.values() if not t["parent_id"] and t["content"] == "Territory Map"]) == 1, "a deleted project task is made again, once")
+    TODO["own"] = {"id": "own", "content": "renewal  playbook", "description": "", "parent_id": None, "project_id": None, "checked": False}
+    s, d = send("Casey Test", w9, [*two, proj("Renewal Playbook", "Claude", "", ["Started"], "1-3 hrs", steps=["Outline"])], use)
+    check(len([t for t in TODO.values() if not t["parent_id"] and _n(t["content"]) == "renewal playbook"]) == 1
+          and TODO["own"]["content"] == "Renewal Playbook", "an open task with the project's name is used, not duplicated")
+    call("DELETE", f"/api/todoist?name=Casey%20Test"); call("POST", "/api/todoist", {"name": "Casey Test", "token": GOOD_TOKEN})
+    n_before = len(TODO)
+    s, d = send("Casey Test", w9, two, use)
+    check(len(TODO) == n_before, "reconnecting carries on with the same tasks")
     check(call("DELETE", f"/api/todoist?name=Casey%20Test")[0] == 200 and call("GET", f"/api/mine?name=Casey%20Test&week={w9}")[1]["todoist"] is False, "disconnect")
     s, d = send("Casey Test", w9, two, use)
     check(s == 200 and "todoist" not in d, "not connected: nothing sent to Todoist")

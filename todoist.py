@@ -1,9 +1,14 @@
 """Sends a person's projects to their own Todoist when they submit.
 
-Each project is one task in their Todoist Inbox, with its next steps as
-subtasks. The same project is reused week to week (its task id is kept),
-so nothing is duplicated: a step already open under it isn't added again,
-and a project whose task was completed or deleted gets a fresh one.
+Each project is one task (in their Inbox when first made), with its next steps
+as subtasks. A project is never created twice:
+  * its task id is kept, and reused every week, wherever the task was moved;
+  * a completed project task is reopened rather than replaced;
+  * with no id on file (a deleted task, a reconnected account), an open task
+    with the same name is adopted before a new one is made.
+Next steps follow the form: new ones are added, ones already open aren't
+added again, and steps this app added that drop off the list are completed.
+Subtasks the person added in Todoist themselves are left alone.
 
 Uses Todoist's API v1 with the person's own API token (Todoist Settings ->
 Integrations -> Developer). TODOIST_API overrides the address, for tests.
@@ -12,6 +17,7 @@ Integrations -> Developer). TODOIST_API overrides the address, for tests.
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API = os.environ.get("TODOIST_API", "https://api.todoist.com/api/v1").rstrip("/")
@@ -29,7 +35,7 @@ def _call(token: str, method: str, path: str, body: dict | None = None):
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
             raw = r.read()
-            return json.loads(raw) if raw else None
+            return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
@@ -40,11 +46,25 @@ def _call(token: str, method: str, path: str, body: dict | None = None):
         raise TodoistError("Couldn't reach Todoist.")
 
 
-def _results(page):
-    """API v1 lists come back as {"results": [...], "next_cursor": ...}."""
-    if isinstance(page, dict):
-        return page.get("results") or []
-    return page or []
+def _all(token: str, path: str, **params) -> list:
+    """Every page of an API v1 list ({"results": [...], "next_cursor": ...})."""
+    out, cursor = [], None
+    for _ in range(50):
+        q = {**params, "limit": 200, **({"cursor": cursor} if cursor else {})}
+        page = _call(token, "GET", f"{path}?{urllib.parse.urlencode(q)}") or {}
+        out += (page.get("results") or []) if isinstance(page, dict) else page
+        cursor = page.get("next_cursor") if isinstance(page, dict) else None
+        if not cursor:
+            break
+    return out
+
+
+def _done(t: dict) -> bool:
+    return bool(t.get("checked") or t.get("completed_at"))
+
+
+def _norm(s: str) -> str:
+    return " ".join(str(s or "").split()).lower()
 
 
 def check_token(token: str) -> str | None:
@@ -56,17 +76,6 @@ def check_token(token: str) -> str | None:
     return None
 
 
-def _open_subtasks(token: str, parent_id: str) -> list:
-    out, cursor = [], None
-    for _ in range(20):
-        page = _call(token, "GET", f"/tasks?parent_id={parent_id}&limit=200" + (f"&cursor={cursor}" if cursor else ""))
-        out += _results(page)
-        cursor = page.get("next_cursor") if isinstance(page, dict) else None
-        if not cursor:
-            break
-    return out
-
-
 def describe(u: dict) -> str:
     bits = [f"{u['type']} project", u.get("timeLeft", "")]
     if u.get("solo") is False and u.get("with"):
@@ -75,27 +84,58 @@ def describe(u: dict) -> str:
 
 
 def send(token: str, projects: list, known: dict) -> dict:
-    """Creates or reuses one task per project and adds new next steps under it.
+    """One task per project, next steps as its subtasks, nothing duplicated.
 
-    known maps a lower-cased project name to its Todoist task id; it's
-    updated in place. Returns {"projects": n, "steps": n} or raises TodoistError.
+    known maps a lower-cased project name to {"id": task id, "steps": {step: subtask id}}
+    (an older plain id string is accepted); it's updated in place.
+    Returns {"projects": n, "steps": added, "closed": n} or raises TodoistError.
     """
-    done = {"projects": 0, "steps": 0}
+    out = {"projects": 0, "steps": 0, "closed": 0}
+    open_tops = None          # open top-level tasks by name, fetched only if needed
     for u in projects:
         key = u["project"].lower()
-        task = _call(token, "GET", f"/tasks/{known[key]}") if known.get(key) else None
-        if not task or task.get("checked") or task.get("is_deleted"):
-            task = _call(token, "POST", "/tasks", {"content": u["project"], "description": describe(u)})
-            if not task or not task.get("id"):
-                raise TodoistError("Todoist didn't create the task.")
-            known[key] = task["id"]
-        else:
-            _call(token, "POST", f"/tasks/{task['id']}", {"description": describe(u)})
-        have = {(t.get("content") or "").strip().lower() for t in _open_subtasks(token, task["id"]) if not t.get("checked")}
+        rec = known.get(key)
+        rec = {"id": rec, "steps": {}} if isinstance(rec, str) else dict(rec or {"id": None, "steps": {}})
+        task = _call(token, "GET", f"/tasks/{rec['id']}") if rec.get("id") else None
+        if task and task.get("is_deleted"):
+            task = None
+        if task and _done(task):
+            _call(token, "POST", f"/tasks/{task['id']}/reopen")          # still going: bring it back
+        if not task:
+            if open_tops is None:
+                open_tops = {}
+                for t in _all(token, "/tasks"):
+                    if not t.get("parent_id"):
+                        open_tops.setdefault(_norm(t.get("content")), t)
+            task = open_tops.get(_norm(u["project"]))
+            if not task:
+                task = _call(token, "POST", "/tasks", {"content": u["project"], "description": describe(u)})
+                if not task or not task.get("id"):
+                    raise TodoistError("Todoist didn't create the task.")
+                open_tops[_norm(u["project"])] = task
+            rec = {"id": task["id"], "steps": {}}
+        _call(token, "POST", f"/tasks/{task['id']}", {"content": u["project"], "description": describe(u)})
+
+        subs = [t for t in _all(token, "/tasks", parent_id=task["id"]) if not _done(t)]
+        open_by_text = {_norm(t.get("content")): t["id"] for t in subs}
+        open_ids = {t["id"] for t in subs}
+        want, steps = set(), {}
         for step in u.get("nextSteps", []):
-            if step.strip().lower() not in have:
-                _call(token, "POST", "/tasks", {"content": step, "parent_id": task["id"]})
-                have.add(step.strip().lower())
-                done["steps"] += 1
-        done["projects"] += 1
-    return done
+            n = _norm(step)
+            if n in want:
+                continue
+            want.add(n)
+            if n in open_by_text:
+                steps[n] = rec["steps"].get(n) or open_by_text[n]
+            else:
+                t = _call(token, "POST", "/tasks", {"content": step, "parent_id": task["id"]})
+                steps[n] = (t or {}).get("id")
+                out["steps"] += 1
+        # steps this app added that are no longer next steps: done or dropped, so complete them
+        for n, sid in rec["steps"].items():
+            if n not in want and sid in open_ids:
+                _call(token, "POST", f"/tasks/{sid}/close")
+                out["closed"] += 1
+        known[key] = {"id": task["id"], "steps": {n: s for n, s in steps.items() if s}}
+        out["projects"] += 1
+    return out
