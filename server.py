@@ -59,6 +59,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import mailer
 import report
+import todoist
 
 APP_ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("PORT", "8080"))
@@ -126,6 +127,11 @@ def load() -> None:
     DATA["tasks"] = _read("tasks.json", [])      # other work: Support Hub, Deal Desk, ...
     DATA["sent"] = _read("sent.json", {})      # week -> when the report email went out
     DATA["drafts"] = _read("drafts.json", {})  # "name|week" -> the form as last saved; never in the report
+    # each person's own Todoist API token, and the Todoist task id for each of their projects;
+    # tokens never leave the server
+    DATA["todoist"] = _read("todoist.json", {})
+    DATA["todoist"].setdefault("tokens", {})
+    DATA["todoist"].setdefault("tasks", {})
     purge_retired()
 
 
@@ -611,10 +617,11 @@ class Handler(BaseHTTPRequestHandler):
                 tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == week]
                 prev_tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == prev_week]
                 draft = DATA["drafts"].get(f"{name}|{week}")
+                linked = name in DATA["todoist"]["tokens"]
             # A new week starts from last week's projects, other work and budget.
             return self.send_json(200, {"updates": ups, "usage": use, "tasks": tasks,
                                         "lastBudget": earlier[-1]["budget"] if earlier else None,
-                                        "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft})
+                                        "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft, "todoist": linked})
 
         # admin only from here
         if path in ("/admin", "/admin.html"):
@@ -687,6 +694,8 @@ class Handler(BaseHTTPRequestHandler):
         (one left off is deleted); a resend just updates."""
         if urlsplit(self.path).path == "/api/admin/test-email":
             return self.test_email()
+        if urlsplit(self.path).path == "/api/todoist":
+            return self.todoist_link("POST")
         if urlsplit(self.path).path != "/api/submit":
             return self.send_json(404, {"error": "Not found"})
         if not self.gate("team"):
@@ -800,7 +809,51 @@ class Handler(BaseHTTPRequestHandler):
             if DATA["drafts"].pop(f"{name}|{week}", None) is not None:
                 write("drafts")
         MAIL_KICK.set()       # everyone in? the email goes now
-        return self.send_json(200, {"updates": saved, "tasks": saved_tasks, "usage": rec_use, "resent": bool(cur_use)})
+        out = {"updates": saved, "tasks": saved_tasks, "usage": rec_use, "resent": bool(cur_use)}
+        with LOCK:
+            token = DATA["todoist"]["tokens"].get(name)
+            prefix = name + "|"
+            known = {k[len(prefix):]: v for k, v in DATA["todoist"]["tasks"].items() if k.startswith(prefix)}
+        if token:
+            # outside the lock: the update is already saved; Todoist trouble is reported, not fatal
+            try:
+                out["todoist"] = todoist.send(token, saved, known)
+            except todoist.TodoistError as e:
+                out["todoist"] = {"error": str(e)}
+            with LOCK:
+                DATA["todoist"]["tasks"].update({prefix + k: v for k, v in known.items()})
+                write("todoist")
+        return self.send_json(200, out)
+
+    def todoist_link(self, method: str):
+        """Connect (POST, with the person's API token) or disconnect (DELETE) their Todoist."""
+        if not self.gate("team"):
+            return
+        if method == "POST":
+            body = self.read_json() or {}
+            name, token = str(body.get("name", "")), str(body.get("token", "")).strip()
+        else:
+            name, token = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}.get("name", ""), ""
+        if name not in roster_names():
+            return self.send_json(400, {"error": "Pick your name first."})
+        if method == "POST":
+            if not re.fullmatch(r"[A-Za-z0-9]{20,100}", token):
+                return self.send_json(400, {"error": "That doesn't look like a Todoist API token. Copy it from Todoist: Settings → Integrations → Developer."})
+            problem = todoist.check_token(token)
+            if problem:
+                return self.send_json(400, {"error": problem})
+        with LOCK:
+            before = json.loads(json.dumps(DATA["todoist"]))
+            if method == "POST":
+                DATA["todoist"]["tokens"][name] = token
+            else:
+                DATA["todoist"]["tokens"].pop(name, None)
+            # a new or removed account starts afresh
+            DATA["todoist"]["tasks"] = {k: v for k, v in DATA["todoist"]["tasks"].items() if not k.startswith(name + "|")}
+            if not write("todoist"):
+                DATA["todoist"] = before
+                return self.unsaved()
+        self.send_json(200, {"todoist": method == "POST"})
 
     def test_email(self):
         """Sends the latest week's report now, marked as a test. Doesn't count as that week's email."""
@@ -849,6 +902,8 @@ class Handler(BaseHTTPRequestHandler):
         """Admin: remove one person's whole send for a week (projects, other work, usage, screenshot)."""
         if urlsplit(self.path).path == "/api/draft":
             return self.draft("DELETE")
+        if urlsplit(self.path).path == "/api/todoist":
+            return self.todoist_link("DELETE")
         if urlsplit(self.path).path != "/api/admin/send":
             return self.send_json(404, {"error": "Not found"})
         if not self.gate("admin"):

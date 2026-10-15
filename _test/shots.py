@@ -129,6 +129,7 @@ try:
         check(pg.locator("#retro").count() == 0, "no Looking back section")
         pg.fill("#spend", "75"); pg.fill("#budget", "250")
         check(pg.locator("input[name=inc]").count() == 0, "no budget increase question")
+        check(pg.is_visible("#todo-setup") and pg.is_hidden("#todo-on"), "Todoist: not connected shows how to connect")
         # draft: autosaves, survives a reload, nothing sent
         pg.wait_for_timeout(3600)
         check("Draft saved" in (pg.text_content("#msg") or ""), "autosaves a draft: " + (pg.text_content("#msg") or ""))

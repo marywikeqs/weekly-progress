@@ -36,8 +36,43 @@ fails = 0
 SENT = []          # emails the fake Resend received
 
 
+TODO = {}          # the fake Todoist's tasks, by id
+GOOD_TOKEN = "a1" * 20
+
+
 class FakeResend(BaseHTTPRequestHandler):
+    """Resend at /emails, and enough of Todoist's API v1 at /todoist."""
+    def _json(self, code, body=None):
+        self.send_response(code); self.send_header("Content-Type", "application/json"); self.end_headers()
+        self.wfile.write(json.dumps(body).encode() if body is not None else b"")
+
+    def _todoist(self, method):
+        if self.headers.get("Authorization") != f"Bearer {GOOD_TOKEN}":
+            return self._json(401, {"error": "bad token"})
+        path, _, query = self.path[len("/todoist"):].partition("?")
+        q = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}") if method == "POST" else {}
+        if path == "/projects":
+            return self._json(200, {"results": [{"id": "inbox"}], "next_cursor": None})
+        if path == "/tasks" and method == "GET":
+            return self._json(200, {"results": [t for t in TODO.values() if t.get("parent_id") == q.get("parent_id")], "next_cursor": None})
+        if path == "/tasks":
+            t = {"id": f"t{len(TODO) + 1}", "content": body["content"], "description": body.get("description", ""),
+                 "parent_id": body.get("parent_id"), "project_id": body.get("project_id"), "checked": False}
+            TODO[t["id"]] = t
+            return self._json(200, t)
+        tid = path.rsplit("/", 1)[-1]
+        if tid not in TODO:
+            return self._json(404, {"error": "not found"})
+        TODO[tid].update(body)
+        return self._json(200, TODO[tid])
+
+    def do_GET(self):
+        return self._todoist("GET")
+
     def do_POST(self):
+        if self.path.startswith("/todoist"):
+            return self._todoist("POST")
         SENT.append({"auth": self.headers.get("Authorization"), **json.loads(self.rfile.read(int(self.headers["Content-Length"])))})
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
         self.wfile.write(b'{"id":"fake-1"}')
@@ -86,7 +121,7 @@ def main():
     threading.Thread(target=fake.serve_forever, daemon=True).start()
     env = {**os.environ, "PORT": str(PORT), "STATE_DIR": str(OUT / "state"),
            "APP_PASSWORD": TEAM[1], "ADMIN_PASSWORD": ADMIN[1],
-           "RESEND_API_KEY": "re_test", "RESEND_API_URL": "http://127.0.0.1:8099/emails"}
+           "RESEND_API_KEY": "re_test", "RESEND_API_URL": "http://127.0.0.1:8099/emails", "TODOIST_API": "http://127.0.0.1:8099/todoist"}
     srv = subprocess.Popen([sys.executable, str(ROOT / "server.py")], env=env, cwd=ROOT,
                            stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     try:
@@ -376,9 +411,44 @@ def run():
     check(call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}", auth=ADMIN)[0] == 404, "deleting again: nothing there")
     check(call("GET", f"/api/mine?name=Casey%20Test&week={w1}")[1]["updates"], "other weeks untouched")
 
+    print("todoist")
+    check(call("POST", "/api/todoist", {"name": "Casey Test", "token": "nope"})[0] == 400, "a malformed token is refused")
+    s, d = call("POST", "/api/todoist", {"name": "Casey Test", "token": "b2" * 20})
+    check(s == 400 and "didn't accept" in d["error"], "a token Todoist rejects is refused")
+    check(call("POST", "/api/todoist", {"name": "Casey Test", "token": GOOD_TOKEN}, auth=None)[0] == 401, "connecting needs sign-in")
+    check(call("POST", "/api/todoist", {"name": "Casey Test", "token": GOOD_TOKEN})[0] == 200, "connect Todoist")
+    mine = call("GET", f"/api/mine?name=Casey%20Test&week={w9}")[1]
+    check(mine["todoist"] is True and GOOD_TOKEN not in json.dumps(mine), "mine says connected, never returns the token")
+    check(call("GET", f"/api/mine?name=Blake%20Test&week={w9}")[1]["todoist"] is False, "Todoist is per person")
+    two = [proj("Pipeline Hygiene", "Claude", "", ["Cleaned"], "1-3 hrs", steps=["Close out Q4 list", "Merge duplicates"]),
+           proj("Territory Map", "Non-Claude", "", ["Drafted"], steps=["Review with Cora"])]
+    s, d = send("Casey Test", w9, two, use)
+    parents = [t for t in TODO.values() if not t["parent_id"]]
+    check(s == 200 and d["todoist"] == {"projects": 2, "steps": 3}, f"send creates a task per project and its next steps: {d.get('todoist')}")
+    check(sorted(t["content"] for t in parents) == ["Pipeline Hygiene", "Territory Map"] and all(not t["project_id"] for t in parents),
+          "projects are tasks in the Inbox (no Todoist project)")
+    pid = next(t["id"] for t in parents if t["content"] == "Pipeline Hygiene")
+    check(sorted(t["content"] for t in TODO.values() if t["parent_id"] == pid) == ["Close out Q4 list", "Merge duplicates"], "next steps are its subtasks")
+    s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Close out Q4 list", "merge duplicates", "Send to finance"]}, two[1]], use)
+    check(d["todoist"] == {"projects": 2, "steps": 1} and len([t for t in TODO.values() if not t["parent_id"]]) == 2,
+          "a resend reuses the project tasks and only adds new steps")
+    TODO[pid]["checked"] = True
+    s, d = send("Casey Test", w9, two, use)
+    check(len([t for t in TODO.values() if not t["parent_id"]]) == 3 and d["todoist"]["steps"] == 2, "a completed project task gets a fresh one")
+    check(call("DELETE", f"/api/todoist?name=Casey%20Test")[0] == 200 and call("GET", f"/api/mine?name=Casey%20Test&week={w9}")[1]["todoist"] is False, "disconnect")
+    s, d = send("Casey Test", w9, two, use)
+    check(s == 200 and "todoist" not in d, "not connected: nothing sent to Todoist")
+    call("POST", "/api/todoist", {"name": "Casey Test", "token": GOOD_TOKEN})
+    good = GOOD_TOKEN
+    globals()["GOOD_TOKEN"] = "c3" * 20          # the token stops working
+    s, d = send("Casey Test", w9, two, use)
+    check(s == 200 and "didn't accept" in d["todoist"]["error"], "a Todoist failure is reported but the update still saves")
+    globals()["GOOD_TOKEN"] = good
+    call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}", auth=ADMIN)
+
     print("persistence")
     files = sorted(p.name for p in (OUT / "state").iterdir())
-    check(files == ["changes.jsonl", "config.json", "drafts.json", "screenshots", "sent.json", "tasks.json", "updates.json", "usage.json"], f"state files: {files}")
+    check(files == ["changes.jsonl", "config.json", "drafts.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")
 
 
 if __name__ == "__main__":

@@ -154,6 +154,21 @@ button:disabled{opacity:.6;cursor:default}
       <img class="preview" id="shot-preview" alt="Screenshot preview">
       <div class="card-err" id="usage-err" hidden></div>
     </div>
+
+    <h2>Todoist <span class="opt">Optional</span></h2>
+    <div class="card" id="todo-card">
+      <div id="todo-on" hidden>
+        <p style="margin:0"><span style="color:var(--green)">✓</span> <strong>Connected.</strong> When you send, each project goes to your Todoist Inbox as a task, with its next steps as subtasks.
+          A project you've sent before is reused, and a step that's already there isn't added again.
+          <button type="button" class="linkish" id="todo-off">Disconnect</button></p>
+      </div>
+      <div id="todo-setup" hidden>
+        <p class="hint" style="margin:0 0 8px">Send each project to your own Todoist as a task, with its next steps as subtasks. Paste your API token from Todoist: Settings → Integrations → Developer.</p>
+        <div style="display:flex;gap:10px"><input id="todo-token" type="password" autocomplete="off" spellcheck="false" placeholder="Todoist API token" aria-label="Todoist API token" style="flex:1">
+          <button type="button" class="ghost" id="todo-connect" style="padding:9px 16px">Connect</button></div>
+        <div class="card-err" id="todo-err" hidden></div>
+      </div>
+    </div>
   </form>
 </div>
 
@@ -231,6 +246,9 @@ async function init() {
   $('name').onchange = () => { store('wp-name', $('name').value); load(); };
   $('add-task').onclick = () => addTask().querySelector('.t-cat').focus();
   $('add-idea').onclick = () => addIdea().querySelector('.i-idea').focus();
+  $('todo-connect').onclick = todoConnect;
+  $('todo-off').onclick = todoDisconnect;
+  $('todo-token').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); todoConnect(); } });
   $('add-tweak').onclick = () => addTweak().querySelector('.w-proj').focus();
   $('add').onclick = () => { foldFinished(); const c = addCard(); c.querySelector('.f-pick:not([hidden]), .f-new:not([hidden])').focus(); };
   $('shot').onchange = onShot;
@@ -282,6 +300,7 @@ async function load() {
   (MINE.usage?.ideas || []).forEach(x => addIdea(x));
   ideasEmpty();
   fillUsage();
+  todoShow();
   $('send').textContent = MINE.updates.length || MINE.usage ? 'Send updated version' : 'Send weekly update';
   const dr = MINE.draft;
   if (dr && (!MINE.usage || dr.savedAt > MINE.usage.updatedAt)) {
@@ -572,6 +591,26 @@ function taskError(el, text, fields = []) {
   const e = el.querySelector('.t-err'); e.textContent = text; e.hidden = !text;
 }
 
+// ---- Todoist: each person connects their own account once ----
+function todoShow() {
+  $('todo-on').hidden = !MINE.todoist; $('todo-setup').hidden = !!MINE.todoist;
+  $('todo-token').value = ''; $('todo-err').hidden = true;
+}
+async function todoConnect() {
+  const token = $('todo-token').value.trim(), btn = $('todo-connect');
+  if (!token) { $('todo-err').textContent = 'Paste your Todoist API token first.'; $('todo-err').hidden = false; return; }
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    await api('/api/todoist', {method: 'POST', body: JSON.stringify({name: $('name').value, token})});
+    MINE.todoist = true; todoShow();
+  } catch (e) { $('todo-err').textContent = e.message; $('todo-err').hidden = false; }
+  btn.disabled = false; btn.textContent = 'Connect';
+}
+async function todoDisconnect() {
+  try { await api(`/api/todoist?name=${encodeURIComponent($('name').value)}`, {method: 'DELETE'}); MINE.todoist = false; todoShow(); }
+  catch (e) { msg(e.message, 'err'); }
+}
+
 // ---- tweaks: small changes to an existing project or tool ----
 function addTweak(x = {}) {
   const el = document.createElement('div');
@@ -732,6 +771,9 @@ function showDone(r) {
     <p class="sub">Week ending ${esc(fmtWeek($('week').value))}. You've used ${pct}% of your ${money(u.budget)} budget this month.</p>
     <ul>${r.updates.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1"><strong>${esc(x.project)}</strong></span><span class="sub">${esc(x.type)} project</span></li>`).join('')}
       ${r.tasks.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.note)}</span></li>`).join('')}</ul>
+    ${!r.todoist ? '' : r.todoist.error
+      ? `<p class="note" style="margin-top:16px">Your update is saved, but it didn't reach Todoist: ${esc(r.todoist.error)}</p>`
+      : `<p class="sub" style="margin-top:16px">Sent to your Todoist: ${r.todoist.projects} project${r.todoist.projects === 1 ? '' : 's'}, ${r.todoist.steps} new next step${r.todoist.steps === 1 ? '' : 's'}.</p>`}
     <p style="margin:24px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
   $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;
   $('edit').onclick = load;
