@@ -180,7 +180,9 @@ def run():
     s, d = send("Avery Test", w1, [cat], use, ideas=[{"idea": "", "why": "Saves time"}])
     check(s == 400 and d["errors"][0]["idea"] == 0, "an idea's why needs the idea itself")
     s, d = send("Avery Test", w1, [cat], use, ideas=[{"idea": "Renewal alerts"}])
-    check(s == 400 and "push for it" in d["errors"][0]["error"], "an idea says whether we could start it or would push for it")
+    check(s == 400 and "where the idea stands" in d["errors"][0]["error"], "an idea says where it stands")
+    s, d = send("Avery Test", w1, [cat], use, ideas=[{"idea": "Renewal alerts", "status": "push"}])
+    check(s == 400, "the old 'push' choice is no longer offered")
     s, d = send("Avery Test", w1, [cat], use, [hub, {**hub, "claude": None}])
     check(s == 400 and d["errors"][0].get("task") == 1, "a bad other-work line is pointed at by index")
     check(send("Avery Test", w1, [cat], use, [{**hub, "timeSaved": None}])[0] == 400, "Claude used on other work needs time saved")
@@ -215,7 +217,7 @@ def run():
     check(d["usage"]["screenshot"] == shot and d["usage"]["spend"] == 430, "resend without a screenshot keeps the one on file")
     check(call("GET", f"/api/mine?name=Avery%20Test&week={w1}")[1]["tasks"] == [], "other work left off the resend is removed")
     send("Avery Test", w1, [cat, {**spif, "solo": False, "with": ["Blake Test", "Finance team", "finance TEAM"]}], {**use, "spend": 430, "screenshot": None, "increase": {**use["increase"], "status": "Approved"}}, [hub],
-         ideas=[{"idea": "Auto-build QBR decks", "why": "Saves about 2 hrs per QBR", "status": "start"}, {"idea": " ", "why": ""}, {"idea": "Renewal alerts", "status": "push"}])
+         ideas=[{"idea": "Auto-build QBR decks", "why": "Saves about 2 hrs per QBR", "status": "start"}, {"idea": " ", "why": ""}, {"idea": "Renewal alerts", "status": "idea"}])
 
     send("Blake Test", w1, [proj("Commission Audit Tool", "Claude", "Blocked", ["Waiting on CIQ API access."], "1-3 hrs"),
                             proj("Board Deck Automation", "Claude", "On track", ["First pass at the monthly deck."], "5+ hrs")],
@@ -290,9 +292,9 @@ def run():
     check("⏳ 2–4 weeks left" in html, "time left shown on each project")
     check("👤 Solo" in html and "👥 With Blake Test, Finance team" in html, "solo / with whom shown (duplicates dropped)")
     check('id="ideas"' in html and "Auto-build QBR decks" in html and "Saves about 2 hrs per QBR" in html and "Renewal alerts" in html, "ideas section, blank idea dropped")
-    check("Could start soon" in html and "Would push for it" in html, "ideas show start soon / push for it")
+    check("Ready to start" in html and "Just an idea" in html, "ideas show where they stand")
     s, t1 = call("GET", f"/report.txt?week={w1}", auth=ADMIN, raw=True)
-    check("(2–4 weeks left)" in t1.decode() and "Avery Test: Auto-build QBR decks [Could start soon] — Saves about 2 hrs per QBR" in t1.decode(), "Slack text has time left and ideas")
+    check("(2–4 weeks left)" in t1.decode() and "Avery Test: Auto-build QBR decks [Ready to start] — Saves about 2 hrs per QBR" in t1.decode(), "Slack text has time left and ideas")
     check('id="glance"' in html and html.index('id="glance"') < html.index('id="digest"'), "At a glance comes before the full breakdown")
     check("Gone Test" not in html and "Everyone is in" in html, "everyone in; inactive people not counted")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
@@ -317,7 +319,7 @@ def run():
     import csv as _csv
     rows = list(_csv.reader(io.StringIO(b.decode("utf-8-sig"))))
     check(s == 200 and len(rows) == 5, "usage CSV filtered to a week (header + 4)")
-    check(any("• Auto-build QBR decks [Could start soon] — Saves about 2 hrs per QBR\n• Renewal alerts [Would push for it]" in c for r in rows for c in r), "usage CSV has the ideas")
+    check(any("• Auto-build QBR decks [Ready to start] — Saves about 2 hrs per QBR\n• Renewal alerts [Just an idea]" in c for r in rows for c in r), "usage CSV has the ideas")
 
     print("drafts")
     w8 = (fri + timedelta(days=21)).isoformat()

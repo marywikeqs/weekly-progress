@@ -69,7 +69,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 #tasks:empty+.add-line{margin-top:0}
 .add-line{background:none;border:0;font:inherit;font-weight:600;color:var(--accent);cursor:pointer;padding:6px 0;margin-top:8px}
 #tasks-empty,#ideas-empty{color:var(--muted);font-size:14px;margin:0 0 4px}
-.idea .i-why{margin-top:8px}.idea .seg{margin-top:8px}.idea .seg label{font-size:14px}.idea .i-idea{flex:1}
+.idea .i-why{margin-top:8px}.idea .seg{margin-top:8px;flex-wrap:wrap}.idea .seg label{flex:1 1 120px}.idea .seg label{font-size:14px}.idea .i-idea{flex:1}
 .note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;margin-bottom:12px}
 .instructions{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-line;margin-bottom:8px}
 .preview{margin-top:8px;max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;display:none}
@@ -566,7 +566,7 @@ function addIdea(x = {}) {
     <div class="t-err" hidden></div>`;
   const q = s => el.querySelector(s);
   q('.i-idea').value = x.idea || ''; q('.i-why').value = x.why || '';
-  if (x.status) { const r = q(`.i-status input[value="${x.status}"]`); if (r) r.checked = true; }
+  if (x.status) { if (x.status === 'push') x.status = 'discuss'; const r = q(`.i-status input[value="${x.status}"]`); if (r) r.checked = true; }
   el.addEventListener('change', () => { el.querySelectorAll('.invalid').forEach(i => i.classList.remove('invalid')); q('.t-err').hidden = true; });
   el.addEventListener('input', () => { el.querySelectorAll('.invalid').forEach(i => i.classList.remove('invalid')); q('.t-err').hidden = true; });
   q('.remove').onclick = () => { el.remove(); ideasEmpty(); };
@@ -653,14 +653,14 @@ async function send(ev) {
     taskError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
     if (bad.length && !firstBad) firstBad = el;
   });
-  // ideas: blank ones are skipped; a "why" needs the idea itself, and each says whether we could start it or would push for it
+  // ideas: blank ones are skipped; a "why" needs the idea itself, and each says where it stands
   const ideaEls = [...document.querySelectorAll('.idea')].filter(el => { const d = readIdea(el); return d.idea || d.why || d.status; });
   ideaEls.forEach(el => {
     const d = readIdea(el), errs = [];
     el.querySelector('.i-idea').classList.toggle('invalid', !d.idea);
     el.querySelector('.i-status').classList.toggle('invalid', !d.status);
     if (!d.idea) errs.push('Name the idea.');
-    if (!d.status) errs.push('Say whether you could start it soon or would push for it.');
+    if (!d.status) errs.push('Say where the idea stands.');
     taskError(el, errs.join(' '));
     if (errs.length && !firstBad) firstBad = el;
   });

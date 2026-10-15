@@ -14,8 +14,9 @@ from html import escape
 
 # Time-saved ranges counted at their midpoints.
 TIME_SAVED_HOURS = {"None": 0, "Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5+ hrs": 6}
-# upcoming ideas: could we start it ourselves, or would we have to push for it?
-IDEA_STATUS = {"start": "Could start soon", "push": "Would push for it"}
+# upcoming ideas: where each one stands, from ready to go to just a thought
+IDEA_CHOICES = {"start": "Ready to start", "discuss": "Let's discuss", "idea": "Just an idea"}
+IDEA_STATUS = {**IDEA_CHOICES, "push": "Let's discuss"}      # "push" was sent for a day before the wording changed
 TIME_LEFT = ["1–2 days", "3–5 days", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date"]
 FLAG_AT = 80  # percent of budget
 
@@ -485,7 +486,7 @@ def render_html(r: dict, weeks: list) -> str:
     if r["ideas"]:
         o.append('<ul class="ideas">' + "".join(
             f'<li>{_av(i["name"], pc.get(i["name"], BLUE), "sm")}<div><strong>{escape(i["idea"])}</strong> <span class="label">{escape(i["name"])}</span>'
-            + (" " + _pill(IDEA_STATUS[i["status"]], GREEN if i["status"] == "start" else ORANGE) if i.get("status") in IDEA_STATUS else "")
+            + (" " + _pill(IDEA_STATUS[i["status"]], {"start": GREEN, "idea": "#868e96"}.get(i["status"], BLUE)) if i.get("status") in IDEA_STATUS else "")
             + (f'<div class="why">{escape(i["why"])}</div>' if i["why"] else "") + "</div></li>" for i in r["ideas"]) + "</ul>")
     else:
         o.append('<p class="empty">No new ideas this week.</p>')

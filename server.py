@@ -557,7 +557,7 @@ class Handler(BaseHTTPRequestHandler):
                 "roster": [p["name"] for p in cfg["roster"] if p["active"]],
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
-                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_STATUS, "requestStatuses": REQUEST_STATUSES,
+                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_CHOICES, "requestStatuses": REQUEST_STATUSES,
                 "taskCategories": task_categories(),
                 "writable": WRITABLE, "persistent": state_persistent(),
             })
@@ -693,8 +693,8 @@ class Handler(BaseHTTPRequestHandler):
                 status = x.get("status")
                 if not idea:
                     errors.append({"idea": i, "error": "Name the idea."})
-                elif status not in report.IDEA_STATUS:
-                    errors.append({"idea": i, "error": "Say whether you could start it soon or would push for it."})
+                elif status not in report.IDEA_CHOICES:
+                    errors.append({"idea": i, "error": "Say where the idea stands: ready to start, let's discuss, or just an idea."})
                 ideas.append({"idea": idea, "why": why, "status": status})
             ideas = ideas[:10]
             cur_use = next((r for r in DATA["usage"] if r["name"] == name and r["week"] == week), None)

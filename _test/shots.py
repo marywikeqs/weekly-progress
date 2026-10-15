@@ -113,7 +113,7 @@ try:
         tk.locator(".t-saved").select_option("Under 1 hr"); tk.locator(".t-note").fill("Two deal reviews")
         pg.click("#add-idea")
         pg.locator(".idea .i-idea").last.fill("Auto-build QBR decks"); pg.locator(".idea .i-why").last.fill("Saves 2 hrs per QBR")
-        pg.locator(".idea .i-status input[value=push]").last.check()
+        pg.locator(".idea .i-status input[value=discuss]").last.check()
         pg.click("#add-idea")   # a second, left blank: skipped on send
         pg.click("#add")   # a third, left blank: skipped on send
         pg.fill("#retro", "Summarizing the deal desk notes");
@@ -134,7 +134,7 @@ try:
         check(pg.locator(".proj").nth(1).locator(".chips input[value='Casey Test']").is_checked()
               and pg.locator(".proj").nth(1).locator(".f-others").input_value() == "Finance team", "draft restores who's working on it")
         check(pg.locator(".idea").count() == 2 and pg.locator(".idea .i-idea").first.input_value() == "Auto-build QBR decks"
-              and pg.locator(".idea .i-status input[value=push]").first.is_checked(), "draft restores ideas")
+              and pg.locator(".idea .i-status input[value=discuss]").first.is_checked(), "draft restores ideas")
         check(pg.input_value("#retro") == "Summarizing the deal desk notes" and pg.input_value("#spend") == "75"
               and pg.is_checked("input[name=inc][value=no]"), "draft restores retro and usage")
         check("screenshot" in (pg.text_content("#shot-state") or ""), "says to attach the screenshot")
