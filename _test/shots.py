@@ -69,7 +69,7 @@ try:
         pg.fill("#week", nxt); pg.dispatch_event("#week", "change"); pg.wait_for_timeout(400)
         check(pg.locator(".proj").count() == 1, "one blank card to start")
         pg.click("#send"); pg.wait_for_timeout(300)
-        check(pg.locator(".invalid").count() >= 5, "empty send marks fields in red")
+        check(pg.locator(".invalid").count() >= 4, "empty send marks fields in red")   # progress, next step, spend, screenshot
         c1 = pg.locator(".proj").nth(0)
         c1.locator(".f-pick").select_option("__new"); c1.locator(".f-new").fill("Pipeline Hygiene")
         c1.locator(".f-type").select_option("Claude")
@@ -127,7 +127,8 @@ try:
         pg.click("#add-idea")   # a second, left blank: skipped on send
         pg.click("#add")   # a third, left blank: skipped on send
         check(pg.locator("#retro").count() == 0, "no Looking back section")
-        pg.fill("#spend", "75"); pg.fill("#budget", "250"); pg.check("input[name=inc][value=no]")
+        pg.fill("#spend", "75"); pg.fill("#budget", "250")
+        check(pg.locator("input[name=inc]").count() == 0, "no budget increase question")
         # draft: autosaves, survives a reload, nothing sent
         pg.wait_for_timeout(3600)
         check("Draft saved" in (pg.text_content("#msg") or ""), "autosaves a draft: " + (pg.text_content("#msg") or ""))
@@ -147,7 +148,7 @@ try:
               and pg.locator(".tweak .w-claude input").is_checked(), "draft restores tweaks")
         check(pg.locator(".idea").count() == 2 and pg.locator(".idea .i-idea").first.input_value() == "Auto-build QBR decks"
               and pg.locator(".idea .i-status input[value=discuss]").first.is_checked(), "draft restores ideas")
-        check(pg.input_value("#spend") == "75" and pg.is_checked("input[name=inc][value=no]"), "draft restores usage")
+        check(pg.input_value("#spend") == "75" and pg.input_value("#budget") == "250", "draft restores usage")
         check("screenshot" in (pg.text_content("#shot-state") or ""), "says to attach the screenshot")
         pg.screenshot(path=str(OUT / "flow-draft.png"), full_page=True)
         pg.set_input_files("#shot", str(OUT / "form-phone-light.png"))

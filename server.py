@@ -86,7 +86,6 @@ LOCK = threading.Lock()
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
 TIME_LEFT = report.TIME_LEFT
-REQUEST_STATUSES = ["Approved", "Pending", "Denied"]
 DEFAULT_CATEGORIES = ["Support Hub", "Deal Desk", "Ad hoc analysis"]
 
 
@@ -323,23 +322,8 @@ def clean_usage(d: dict) -> dict | str:
     if spend is None:
         return "Enter your spend so far this month."
     if budget is None or budget <= 0:
-        return "Enter your current monthly budget."
-    if d.get("increaseRequested") not in (True, False):
-        return "Say whether you requested a budget increase this week."
-    out = {"name": name, "week": d["week"], "spend": spend, "budget": budget,
-           "increaseRequested": d["increaseRequested"], "increase": None}
-    if d["increaseRequested"]:
-        inc = d.get("increase") or {}
-        amount = money(inc.get("amount"))
-        reason = re.sub(r"\s+", " ", str(inc.get("reason", ""))).strip()[:300]
-        if amount is None or amount <= 0:
-            return "Enter the new budget amount you requested."
-        if not reason:
-            return "Enter the reason for the increase."
-        if inc.get("status") not in REQUEST_STATUSES:
-            return "Pick the request status."
-        out["increase"] = {"amount": amount, "reason": reason, "status": inc["status"]}
-    return out
+        return "Enter your monthly budget."
+    return {"name": name, "week": d["week"], "spend": spend, "budget": budget}
 
 
 def save_shot(shot) -> str | None:
@@ -489,10 +473,6 @@ USAGE_COLS = [
     ("Week ending", lambda r: r["week"]), ("Name", lambda r: r["name"]),
     ("Spend this month", lambda r: r["spend"]), ("Monthly budget", lambda r: r["budget"]),
     ("% of budget", lambda r: round(100 * r["spend"] / r["budget"], 1) if r["budget"] else ""),
-    ("Requested increase", lambda r: "Yes" if r["increaseRequested"] else "No"),
-    ("Requested budget", lambda r: (r.get("increase") or {}).get("amount", "")),
-    ("Reason", lambda r: (r.get("increase") or {}).get("reason", "")),
-    ("Request status", lambda r: (r.get("increase") or {}).get("status", "")),
     ("Tweaks", lambda r: "\n".join(f"• {t['project']}: {t['change']}" + (" (Claude)" if t.get("claude") else "") for t in r.get("tweaks", []))),
     ("Upcoming project ideas", lambda r: "\n".join("• " + i["idea"] + (f" [{report.IDEA_STATUS[i['status']]}]" if i.get("status") in report.IDEA_STATUS else "")
                                                      + (f" — {i['why']}" if i.get("why") else "") for i in r.get("ideas", []))),
@@ -614,7 +594,7 @@ class Handler(BaseHTTPRequestHandler):
                 "roster": [p["name"] for p in cfg["roster"] if p["active"]],
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
-                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_CHOICES, "claudeFit": report.CLAUDE_FIT, "requestStatuses": REQUEST_STATUSES,
+                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_CHOICES, "claudeFit": report.CLAUDE_FIT,
                 "taskCategories": task_categories(),
                 "writable": WRITABLE, "persistent": state_persistent(),
             })

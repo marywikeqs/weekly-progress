@@ -217,10 +217,9 @@ def html(r: dict, note: str = "") -> str:
                            f'<td align="right" style="padding:4px 8px;border-bottom:1px solid {LINE}">{report.money(u["budget"])}</td>'
                            f'<td align="right" style="padding:4px 0 4px 8px;border-bottom:1px solid {LINE};{"color:" + RED + ";font-weight:bold" if u["flag"] else ""}">{u["pct"]:.0f}%{" ⚑" if u["flag"] else ""}</td></tr>'
                            for u in r["spend"]) + "</table>")
-    if r["requests"]:
-        o.append(f'<h2 {h2}>Budget increase requests</h2><ul style="margin:0;padding-left:18px">'
-                 + "".join(f'<li>{escape(u["name"])}: {report.money(u["budget"])} → {report.money(u["increase"]["amount"])} '
-                           f'({escape(u["increase"]["status"])}). {escape(u["increase"]["reason"])}</li>' for u in r["requests"]) + "</ul>")
+    if r["budgetChanges"]:
+        o.append(f'<h2 {h2}>Budget changes</h2><ul style="margin:0;padding-left:18px">'
+                 + "".join(f'<li>{escape(b["name"])}: {report.money(b["from"])} → {report.money(b["to"])}</li>' for b in r["budgetChanges"]) + "</ul>")
 
     o.append(f'<p style="margin:24px 0 8px"><a href="{escape(link)}" style="display:inline-block;background:{report.ACCENT};color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold">'
              f'Open the full report</a></p><p {small}>The full report has the usage screenshots and the latest edits. It needs the admin login.</p></div>')

@@ -184,7 +184,12 @@ def build(data: dict, week: str) -> dict:
         pct = 100 * u["spend"] / u["budget"] if u["budget"] else 0
         spend_rows.append({**u, "pct": pct, "flag": pct > FLAG_AT,
                            "weekSpend": u["spend"] - prev_spend[u["name"]] if u["name"] in prev_spend else None})
-    requests = [u for u in spend_rows if u["increaseRequested"] and u.get("increase")]
+    # budget changes: this week's budget against the person's last one sent
+    budget_changes = []
+    for u in spend_rows:
+        before = max((x for x in data["usage"] if x["name"] == u["name"] and x["week"] < week), key=lambda x: x["week"], default=None)
+        if before and before["budget"] != u["budget"]:
+            budget_changes.append({"name": u["name"], "from": before["budget"], "to": u["budget"]})
 
     return {
         "week": week, "prevWeek": prev, "hasPrev": has_prev, "sameMonth": same_month,
@@ -192,7 +197,7 @@ def build(data: dict, week: str) -> dict:
         "people": people, "other": other_groups, "top": top, "ideas": ideas, "tweaks": tweaks,
         "fits": sorted((u for u in cur["updates"] if u.get("claudeFit") in ("Yes", "Maybe")),
                        key=lambda u: (u["claudeFit"] != "Yes", u["project"].lower())),
-        "spend": spend_rows, "requests": requests,
+        "spend": spend_rows, "budgetChanges": budget_changes,
         "flagged": [u for u in spend_rows if u["flag"]],
         "shots": [u for u in spend_rows if u.get("screenshot")],
     }
@@ -242,9 +247,8 @@ def render_text(r: dict, base_url: str = "") -> str:
     if c["budget"]:
         lines.append(f"*Spend:* {money(c['spend'])} of {money(c['budget'])} monthly budget ({100 * c['spend'] / c['budget']:.0f}%)"
                      + (" · over 80%: " + ", ".join(f"{u['name']} ({u['pct']:.0f}%)" for u in r["flagged"]) if r["flagged"] else ""))
-    for u in r["requests"]:
-        i = u["increase"]
-        lines.append(f"   • Budget request: {u['name']} → {money(i['amount'])} ({i['status']}) — {i['reason']}")
+    for b in r["budgetChanges"]:
+        lines.append(f"   • Budget change: {b['name']} {money(b['from'])} → {money(b['to'])}")
     if base_url:
         lines += ["", f"Full report: {base_url}/report?week={r['week']}"]
     return "\n".join(lines) + "\n"
@@ -542,14 +546,10 @@ def render_html(r: dict, weeks: list) -> str:
                  f'<th>{(100 * c["spend"] / c["budget"]) if c["budget"] else 0:.0f}%</th><th></th></tr></tbody></table></div>')
     else:
         o.append('<p class="empty">No usage for this week yet.</p>')
-    o.append('<div class="group-head">Budget increase requests</div>')
-    if r["requests"]:
-        o.append("".join(f'<div class="row"><span class="ring r-{escape(u["increase"]["status"])}"></span>'
-                         f'<div class="body"><div class="top"><strong>{escape(u["name"])}</strong><span>{money(u["budget"])} → {money(u["increase"]["amount"])}</span>'
-                         f'<span class="label">{escape(u["increase"]["status"])}</span></div><div class="meta">{escape(u["increase"]["reason"])}</div></div></div>'
-                         for u in r["requests"]))
-    else:
-        o.append('<p class="empty">None this week.</p>')
+    if r["budgetChanges"]:
+        o.append('<div class="group-head">Budget changes</div>'
+                 + "".join(f'<div class="row">{_av(b["name"], pc.get(b["name"], BLUE), "sm")}<div class="body"><div class="top"><strong>{escape(b["name"])}</strong>'
+                           f'<span>{money(b["from"])} → {money(b["to"])}</span></div></div></div>' for b in r["budgetChanges"]))
     o.append('<div class="group-head">Usage screenshots</div>')
     if r["shots"]:
         o.append('<div class="gallery">' + "".join(

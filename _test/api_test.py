@@ -196,8 +196,8 @@ def run():
     s, d = send("Avery Test", w1, [cat], {**use, "screenshot": None})
     check(s == 400 and d["errors"][0].get("usage"), "screenshot required the first time")
     check(send("Avery Test", w1, [cat], {**use, "screenshot": "data:image/png;base64,aGVsbG8="})[0] == 400, "non-image refused")
-    s, d = send("Avery Test", w1, [cat], {**use, "increase": {**use["increase"], "reason": ""}})
-    check(s == 400 and d["errors"][0].get("usage"), "increase needs a reason")
+    s, d = send("Avery Test", w1, [cat], {**use, "budget": ""})
+    check(s == 400 and d["errors"][0].get("usage"), "budget is required")
 
     print("one send: saving")
     s, d = send("Avery Test", w1, [cat, spif], use, [hub, {"category": "Pricing desk", "claude": False, "note": "Quote review"}])
@@ -245,7 +245,7 @@ def run():
                             proj("Territory Map", "Non-Claude", "Completed", ["Done"])],
          {"spend": 300, "budget": 500, "increaseRequested": False, "screenshot": data_url((90, 90, 90))})
     send("Blake Test", w0, [proj("Commission Audit Tool", "Claude", "On track", ["Last week"], "Under 1 hr")],
-         {"spend": 100, "budget": 300, "increaseRequested": False, "screenshot": data_url((90, 90, 90))})
+         {"spend": 100, "budget": 250, "increaseRequested": False, "screenshot": data_url((90, 90, 90))})
     w2 = (fri + timedelta(days=7)).isoformat()
     s, d = call("GET", f"/api/mine?name=Avery%20Test&week={w2}")
     check(d["lastBudget"] == 500 and d["lastWeek"] == w1 and len(d["lastProjects"]) == 2 and len(d["lastTasks"]) == 1,
@@ -302,6 +302,8 @@ def run():
     check("Could Claude help? Maybe — Drafting the approval matrix" in html and "Non-Claude projects Claude could help with" in html
           and "ignored for Claude" not in html, "Could Claude help shown on the project and in Claude impact")
     check("could have helped" not in html.lower(), "no 'Claude could have helped' anywhere in the report")
+    check("Budget changes" in html and "$250 → $300" in html and "request" not in html.lower().replace("requests", ""), "budget change noted, no budget requests")
+    check("increaseRequested" not in d["usage"] if "usage" in d else True, "no increase fields stored")
     check("⏳ 2–4 weeks left" in html, "time left shown on each project")
     check("👤 Solo" in html and "👥 With Blake Test, Finance team" in html, "solo / with whom shown (duplicates dropped)")
     check('id="ideas"' in html and "Auto-build QBR decks" in html and "Saves about 2 hrs per QBR" in html and "Renewal alerts" in html, "ideas section, blank idea dropped")

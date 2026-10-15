@@ -41,7 +41,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .seg{display:flex;gap:8px}.seg label{flex:1;margin:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .seg input{width:auto;margin:0}.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
 .seg.invalid label{border-color:var(--red)}
-#inc-wrap{margin-top:4px}
 .proj-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .proj-head h3{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
 .remove{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;cursor:pointer;padding:4px 6px}
@@ -146,16 +145,7 @@ button:disabled{opacity:.6;cursor:default}
     <div class="card" id="usage">
       <div class="row">
         <div><label for="spend">Spend used so far this month</label><div class="money"><span>$</span><input id="spend" inputmode="decimal" placeholder="0.00"></div></div>
-        <div><label for="budget">Current monthly budget</label><div class="money"><span>$</span><input id="budget" inputmode="decimal" placeholder="0.00"></div></div>
-      </div>
-      <span class="lbl">Did you request a budget increase this week?</span>
-      <div class="seg" id="inc-seg"><label><input type="radio" name="inc" value="no"> No</label><label><input type="radio" name="inc" value="yes"> Yes</label></div>
-      <div id="inc-wrap" hidden>
-        <div class="row">
-          <div><label for="inc-amount">New budget requested</label><div class="money"><span>$</span><input id="inc-amount" inputmode="decimal"></div></div>
-          <div><label for="inc-status">Request status</label><select id="inc-status"></select></div>
-        </div>
-        <label for="inc-reason">Reason for the increase</label><input id="inc-reason" maxlength="300">
+        <div><label for="budget">Monthly budget allocated</label><div class="money"><span>$</span><input id="budget" inputmode="decimal" placeholder="0.00"></div></div>
       </div>
       <label for="shot">Usage screenshot</label>
       <div class="instructions" id="shot-howto"></div>
@@ -236,7 +226,6 @@ async function init() {
   $('name').innerHTML = options(CFG.roster, 'Choose your name');
   const me = recall('wp-name');
   if (me && CFG.roster.includes(me)) $('name').value = me;
-  $('inc-status').innerHTML = options(CFG.requestStatuses, 'Choose');
   $('shot-howto').textContent = CFG.screenshotInstructions || 'Capture your Claude usage screen for this month so far.';
 
   $('name').onchange = () => { store('wp-name', $('name').value); load(); };
@@ -244,7 +233,6 @@ async function init() {
   $('add-idea').onclick = () => addIdea().querySelector('.i-idea').focus();
   $('add-tweak').onclick = () => addTweak().querySelector('.w-proj').focus();
   $('add').onclick = () => { foldFinished(); const c = addCard(); c.querySelector('.f-pick:not([hidden]), .f-new:not([hidden])').focus(); };
-  document.querySelectorAll('input[name=inc]').forEach(r => r.onchange = () => { $('inc-wrap').hidden = incValue() !== true; });
   $('shot').onchange = onShot;
   $('form').onsubmit = send;
   $('form').addEventListener('input', () => { if ($('msg').classList.contains('err')) msg(''); });
@@ -310,8 +298,7 @@ async function load() {
 // ---- drafts: the form as typed, kept on the server until sent ----
 function readForm() {
   return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('#tasks .task')].map(readTask),
-          tweaks: [...document.querySelectorAll('.tweak')].map(readTweak), ideas: [...document.querySelectorAll('.idea')].map(readIdea), spend: $('spend').value, budget: $('budget').value, inc: incValue(),
-          incAmount: $('inc-amount').value, incStatus: $('inc-status').value, incReason: $('inc-reason').value};
+          tweaks: [...document.querySelectorAll('.tweak')].map(readTweak), ideas: [...document.querySelectorAll('.idea')].map(readIdea), spend: $('spend').value, budget: $('budget').value};
 }
 function applyForm(f) {
   $('projects').innerHTML = ''; cardSeq = 0;
@@ -328,9 +315,6 @@ function applyForm(f) {
   (f.ideas || []).forEach(x => addIdea(x));
   ideasEmpty();
   $('spend').value = f.spend ?? ''; $('budget').value = f.budget ?? '';
-  document.querySelectorAll('input[name=inc]').forEach(r => r.checked = f.inc !== null && f.inc !== undefined && (r.value === 'yes') === f.inc);
-  $('inc-wrap').hidden = f.inc !== true;
-  $('inc-amount').value = f.incAmount || ''; $('inc-status').value = f.incStatus || ''; $('inc-reason').value = f.incReason || '';
   if (!MINE.usage) $('shot-state').textContent = "Drafts don't keep the screenshot. Attach it before you send.";
 }
 function draftSoon() {
@@ -630,7 +614,6 @@ const readIdea = el => ({idea: el.querySelector('.i-idea').value.trim(), why: el
                          status: el.querySelector('.i-status input:checked')?.value || null});
 
 // ---- usage ----
-function incValue() { const r = document.querySelector('input[name=inc]:checked'); return r ? r.value === 'yes' : null; }
 function clearUsage() { document.querySelectorAll('#usage .invalid').forEach(x => x.classList.remove('invalid')); $('usage-err').hidden = true; }
 $('usage').addEventListener('input', clearUsage);
 $('usage').addEventListener('change', clearUsage);
@@ -639,24 +622,13 @@ function fillUsage() {
   shotData = null; $('shot').value = ''; $('shot-preview').style.display = 'none';
   $('spend').value = u ? u.spend : '';
   $('budget').value = u ? u.budget : (MINE.lastBudget ?? '');
-  document.querySelectorAll('input[name=inc]').forEach(r => r.checked = u ? (r.value === 'yes') === u.increaseRequested : false);
-  $('inc-wrap').hidden = !(u && u.increaseRequested);
-  $('inc-amount').value = u?.increase?.amount ?? '';
-  $('inc-status').value = u?.increase?.status ?? '';
-  $('inc-reason').value = u?.increase?.reason ?? '';
   $('shot-state').textContent = u ? 'Your screenshot is on file. Upload a new one only to replace it.' : '';
   clearUsage();
 }
 function checkUsage() {
-  const bad = [], inc = incValue();
+  const bad = [];
   if (num($('spend').value) === null) bad.push([$('spend'), 'Enter your spend so far this month.']);
   if (!(num($('budget').value) > 0)) bad.push([$('budget'), 'Enter your monthly budget.']);
-  if (inc === null) bad.push([$('inc-seg'), 'Say whether you asked for a budget increase.']);
-  if (inc) {
-    if (!(num($('inc-amount').value) > 0)) bad.push([$('inc-amount'), 'Enter the budget you asked for.']);
-    if (!$('inc-status').value) bad.push([$('inc-status'), 'Choose the request status.']);
-    if (!$('inc-reason').value.trim()) bad.push([$('inc-reason'), 'Give the reason for the increase.']);
-  }
   if (!shotData && !MINE.usage) bad.push([$('shot'), 'Attach your usage screenshot.']);
   return bad;
 }
@@ -727,12 +699,9 @@ async function send(ev) {
   if (ub.length && !firstBad) firstBad = $('usage');
   if (firstBad) { msg('A few things need fixing. They\'re marked in red.', 'err'); firstBad.scrollIntoView({behavior: 'smooth', block: 'center'}); return; }
 
-  const inc = incValue();
   const body = {
     name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), tweaks: tweakEls.map(readTweak), ideas: ideaEls.map(readIdea),
-    usage: {spend: num($('spend').value), budget: num($('budget').value), increaseRequested: inc,
-            increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
-            screenshot: shotData},
+    usage: {spend: num($('spend').value), budget: num($('budget').value), screenshot: shotData},
   };
   const btn = $('send'); btn.disabled = true; msg('Sending…');
   clearTimeout(draftTimer); draftTimer = null; sending = true;
