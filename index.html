@@ -34,6 +34,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .chips label{margin:0;font-weight:500;font-size:14px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;display:flex;gap:6px;align-items:center;cursor:pointer}
 .chips input{width:auto;height:auto!important;margin:0;accent-color:var(--accent)}.chips label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
 .f-team .f-others{margin-top:8px}
+.f-fit .f-how{margin-top:8px}
 .x-line{flex:none;background:none;border:0;color:var(--muted);font-size:20px;line-height:1;padding:10px 4px;cursor:pointer;border-radius:6px}
 .x-line:hover{color:var(--red)}
 .more{background:none;border:0;font:inherit;font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;padding:0 0 4px 20px}
@@ -265,7 +266,7 @@ async function load() {
     st.hidden = false;
   } else {
     const carry = MINE.lastProjects;
-    carry.forEach(u => addCard({project: u.project, type: u.type, timeLeft: u.timeLeft, solo: u.solo, with: u.with}));
+    carry.forEach(u => addCard({project: u.project, type: u.type, timeLeft: u.timeLeft, solo: u.solo, with: u.with, claudeFit: u.claudeFit, claudeHow: u.claudeHow}));
     if (!carry.length) addCard();
     st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one (check the time left), and remove any you didn't work on this week.` : '';
     st.hidden = !carry.length;
@@ -365,6 +366,11 @@ function addCard(u = {}) {
       <div class="chips">${CFG.roster.filter(n => n !== $('name').value).map(n => `<label><input type="checkbox" value="${esc(n)}"> ${esc(n)}</label>`).join('')}</div>
       <input class="f-others" maxlength="200" placeholder="Anyone else, e.g. Finance team (separate with commas)" aria-label="Others working on it">
     </div>
+    <div class="f-fit" hidden>
+      <span class="lbl">Could Claude help with this project?</span>
+      <div class="seg f-fitseg">${CFG.claudeFit.map(v => `<label><input type="radio" name="fit${id}" value="${v}"> ${v}</label>`).join('')}</div>
+      <input class="f-how" maxlength="300" placeholder="How? e.g. Drafting the summaries, pulling the data" aria-label="How Claude could help" hidden>
+    </div>
     <span class="lbl">Progress this week</span>
     ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Another line' : 'What moved this week'}"></textarea>${i ? '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>' : ''}</div>`).join('')}
     <button type="button" class="more">+ Add a line</button>
@@ -385,6 +391,14 @@ function addCard(u = {}) {
   const mates = new Set();
   el.querySelectorAll('.chips input').forEach(c => { if ((u.with || []).includes(c.value)) { c.checked = true; mates.add(c.value); } });
   q('.f-others').value = (u.with || []).filter(w => !mates.has(w)).join(', ');
+  if (u.claudeFit) { const r = q(`.f-fitseg input[value="${u.claudeFit}"]`); if (r) r.checked = true; }
+  q('.f-how').value = u.claudeHow || '';
+  const fitSync = () => {
+    q('.f-fit').hidden = q('.f-type').value !== 'Non-Claude';
+    const f = q('.f-fitseg input:checked');
+    q('.f-how').hidden = !f || f.value === 'No';
+  };
+  el.querySelectorAll('.f-fitseg input').forEach(r => r.addEventListener('change', fitSync));
   const teamSync = () => { q('.f-team').hidden = !q('.f-solo input[value=team]').checked; };
   el.querySelectorAll('.f-solo input').forEach(r => r.addEventListener('change', teamSync));
   teamSync();
@@ -394,6 +408,7 @@ function addCard(u = {}) {
     const isNew = !learned || q('.f-pick').value === '__new';
     q('.f-new').hidden = !isNew;
     q('.newname').hidden = !isNew;
+    fitSync();
   };
   q('.f-pick').onchange = () => {
     const p = CFG.projects.find(p => p.name === q('.f-pick').value);
@@ -444,7 +459,7 @@ function fold(el, shut) {
     const who = d.solo ? '👤 Solo' : '👥 With ' + d.with.join(', ');
     const n = (k, one) => `${k} ${one}${k === 1 ? '' : 's'}`;
     q('.proj-sum').innerHTML = `<strong>${esc(d.project)}</strong>
-      <span class="meta">${esc(d.type)} project · ⏳ ${esc(d.timeLeft)}${/^Ongoing/.test(d.timeLeft) ? '' : ' left'} · ${esc(who)}</span>
+      <span class="meta">${esc(d.type)} project · ⏳ ${esc(d.timeLeft)}${/^Ongoing/.test(d.timeLeft) ? '' : ' left'} · ${esc(who)}${d.claudeFit ? ' · 🤖 Claude could help: ' + esc(d.claudeFit) : ''}</span>
       <span class="first">${esc(d.progress[0] || '')}</span>
       <span class="meta">${n(d.progress.length, 'progress line')} · ${n(d.nextSteps.length, 'next step')}</span>`;
   }
@@ -468,6 +483,8 @@ function readCard(el) {
     type: q('.f-type').value,
     timeLeft: q('.f-left').value,
     solo: q('.f-solo input:checked') ? q('.f-solo input:checked').value === 'solo' : null,
+    claudeFit: q('.f-type').value === 'Non-Claude' ? q('.f-fitseg input:checked')?.value || null : null,
+    claudeHow: q('.f-type').value === 'Non-Claude' && q('.f-fitseg input:checked')?.value !== 'No' ? q('.f-how').value.trim() : '',
     with: q('.f-solo input[value=team]').checked
       ? [...el.querySelectorAll('.chips input:checked')].map(c => c.value).concat(q('.f-others').value.split(',').map(x => x.trim()).filter(Boolean)) : [],
     progress: [...el.querySelectorAll('.f-b')].map(t => t.value.trim()).filter(Boolean),
@@ -482,6 +499,8 @@ function checkCard(el, d) {   // the server's rules, checked here to point at th
   if (!d.timeLeft) bad.push([q('.f-left'), 'Choose how much time is left.']);
   if (d.solo === null) bad.push([q('.f-solo'), 'Say whether it\'s just you or with others.']);
   else if (!d.solo && !d.with.length) bad.push([q('.f-others'), 'Pick or name who you\'re working with.']);
+  if (d.type === 'Non-Claude' && !d.claudeFit) bad.push([q('.f-fitseg'), 'Say whether Claude could help.']);
+  else if (d.claudeFit && d.claudeFit !== 'No' && !d.claudeHow) bad.push([q('.f-how'), 'Say how Claude could help.']);
   if (!d.progress.length) bad.push([q('.f-b'), 'Add at least one line of progress.']);
   if (!d.nextSteps.length) bad.push([q('.f-n'), 'Add at least one next step.']);
   return bad;

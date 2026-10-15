@@ -271,9 +271,18 @@ def clean_update(d: dict) -> dict | str:
         others = others[:10]
         if not others:
             return "Add who you're working with."
+    # non-Claude projects: could Claude help, and how (needed for Yes / Maybe)
+    fit, how = None, ""
+    if ptype == "Non-Claude":
+        fit = d.get("claudeFit")
+        if fit not in report.CLAUDE_FIT:
+            return "Say whether Claude could help with this project."
+        how = re.sub(r"\s+", " ", str(d.get("claudeHow") or "")).strip()[:300] if fit != "No" else ""
+        if fit != "No" and not how:
+            return "Say how Claude could help."
     out = {"name": name, "week": d["week"], "project": project,
            "type": ptype, "timeLeft": d["timeLeft"], "solo": solo, "with": others, "progress": bullets, "nextSteps": steps,
-           "timeSaved": None}
+           "timeSaved": None, "claudeFit": fit, "claudeHow": how}
     return out
 
 
@@ -461,6 +470,8 @@ UPDATE_COLS = [
     ("Type", lambda r: r["type"]),
     ("Time left", lambda r: r.get("timeLeft", "")),
     ("Working with", lambda r: "Solo" if r.get("solo") else ", ".join(r.get("with", []))),
+    ("Could Claude help", lambda r: r.get("claudeFit") or ""),
+    ("How Claude could help", lambda r: r.get("claudeHow") or ""),
     ("Progress this week", lambda r: "\n".join("• " + b for b in r["progress"])),
     ("Next steps", lambda r: "\n".join("• " + b for b in r.get("nextSteps", []))),
     ("Time saved with Claude", lambda r: r.get("timeSaved") or ""),
@@ -602,7 +613,7 @@ class Handler(BaseHTTPRequestHandler):
                 "roster": [p["name"] for p in cfg["roster"] if p["active"]],
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
-                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_CHOICES, "requestStatuses": REQUEST_STATUSES,
+                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_CHOICES, "claudeFit": report.CLAUDE_FIT, "requestStatuses": REQUEST_STATUSES,
                 "taskCategories": task_categories(),
                 "writable": WRITABLE, "persistent": state_persistent(),
             })

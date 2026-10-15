@@ -17,6 +17,17 @@ TIME_SAVED_HOURS = {"None": 0, "Under 1 hr": 0.5, "1-3 hrs": 2, "3-5 hrs": 4, "5
 # upcoming ideas: where each one stands ("start" = ready to go, just needs sign-off)
 IDEA_CHOICES = {"start": "Need a greenlight", "discuss": "Let's discuss", "idea": "Just an idea"}
 IDEA_STATUS = {**IDEA_CHOICES, "push": "Let's discuss"}      # "push" was sent for a day before the wording changed
+# non-Claude projects: could Claude help with it?
+CLAUDE_FIT = ["Yes", "Maybe", "No"]
+
+
+def fit_text(u: dict) -> str:
+    """'Could Claude help? Maybe — drafting the summaries', or '' when not asked."""
+    if not u.get("claudeFit"):
+        return ""
+    return f"Could Claude help? {u['claudeFit']}" + (f" — {u['claudeHow']}" if u.get("claudeHow") else "")
+
+
 TIME_LEFT = ["1–2 days", "3–5 days", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date"]
 FLAG_AT = 80  # percent of budget
 
@@ -177,6 +188,8 @@ def build(data: dict, week: str) -> dict:
         "week": week, "prevWeek": prev, "hasPrev": has_prev, "sameMonth": same_month,
         "cur": cur, "last": last, "participation": participation,
         "people": people, "other": other_groups, "top": top, "ideas": ideas,
+        "fits": sorted((u for u in cur["updates"] if u.get("claudeFit") in ("Yes", "Maybe")),
+                       key=lambda u: (u["claudeFit"] != "Yes", u["project"].lower())),
         "spend": spend_rows, "requests": requests,
         "flagged": [u for u in spend_rows if u["flag"]],
         "shots": [u for u in spend_rows if u.get("screenshot")],
@@ -214,6 +227,9 @@ def render_text(r: dict, base_url: str = "") -> str:
     top = ", ".join(f"{t['project']} ({t['hours']:g} hrs)" for t in r["top"][:3])
     lines.append(f"*Claude time saved:* ~{c['hours']:g} hrs{_delta(c['hours'], l['hours'], hp, ' hrs')}"
                  + (f" · top: {top}" if top else ""))
+    if r["fits"]:
+        lines.append("*Non-Claude projects Claude could help with:*")
+        lines += [f"   • {u['project']} ({u['name']}, {u['claudeFit']}): {u['claudeHow']}" for u in r["fits"]]
     if r["ideas"]:
         lines.append("*Upcoming project ideas:*")
         lines += [f"   • {i['name']}: {i['idea']}" + (f" [{IDEA_STATUS[i['status']]}]" if i.get("status") in IDEA_STATUS else "")
@@ -448,6 +464,8 @@ def render_html(r: dict, weeks: list) -> str:
             meta = ""
             if u["type"] == "Claude" and u.get("timeSaved"):
                 meta = f'⏱ Time saved with Claude: {escape(u["timeSaved"])}'
+            elif fit_text(u):
+                meta = f'🤖 {escape(fit_text(u))}'
             o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
                      f'<div class="top"><strong>{escape(u["project"])}</strong>{_label(u["type"])}'
                      + (_pill("New this week", GREEN) if u["new"] else "")
@@ -485,6 +503,11 @@ def render_html(r: dict, weeks: list) -> str:
                  + "</tbody></table>")
     else:
         o.append('<p class="empty">No time saved reported.</p>')
+    if r["fits"]:
+        o.append('<div class="group-head">Non-Claude projects Claude could help with</div>'
+                 + "".join(f'<div class="row">{_av(u["name"], pc.get(u["name"], BLUE), "sm")}<div class="body"><strong>{escape(u["project"])}</strong> '
+                           f'<span class="label">{escape(u["name"])}</span> {_pill(u["claudeFit"], GREEN if u["claudeFit"] == "Yes" else ORANGE)}'
+                           f'<div class="meta">{escape(u["claudeHow"])}</div></div></div>' for u in r["fits"]))
 
 
     # usage and spend

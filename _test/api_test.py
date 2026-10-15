@@ -148,7 +148,7 @@ def run():
 
     def proj(project, type_, _old_status, progress, saved=None, help_="", steps=None):
         return {"project": project, "type": type_, "timeLeft": "2–4 weeks", "solo": True, "progress": progress, "nextSteps": steps or ["Keep going"],
-                "timeSaved": saved, "couldHelp": help_}
+                "timeSaved": saved, "claudeFit": "Maybe" if help_ else "No", "claudeHow": help_}
 
     hub = {"category": "support hub", "timeSpent": "3-5 hrs", "claude": True, "timeSaved": "1-3 hrs", "note": "Answered rep questions"}
 
@@ -205,7 +205,14 @@ def run():
     check("Pricing desk" in call("GET", "/api/config")[1]["taskCategories"], "a typed kind of work stays pickable")
     a_cat = d["updates"][0]
     check(a_cat["progress"] == cat["progress"][:2] + ["extra"], "blank bullets dropped, max 3 kept")
+    s2, d2 = send("Avery Test", w1, [cat, {**spif, "claudeFit": None}], use)
+    check(s2 == 400 and "Claude could help" in d2["error"], "non-Claude projects need Could Claude help")
+    s2, d2 = send("Avery Test", w1, [cat, {**spif, "claudeFit": "Yes", "claudeHow": " "}], use)
+    check(s2 == 400 and "how Claude could help" in d2["error"], "Yes / Maybe needs how")
+    s, d = send("Avery Test", w1, [cat, spif], use, [hub, {"category": "Pricing desk", "claude": False, "note": "Quote review"}])
     check("couldHelp" not in a_cat and d["updates"][1]["timeSaved"] is None, "conditional fields kept only for their type")
+    check(a_cat["claudeFit"] is None and a_cat["claudeHow"] == "", "Could Claude help is only kept for non-Claude projects")
+    check(d["updates"][1]["claudeFit"] == "Maybe" and d["updates"][1]["claudeHow"] == "Drafting the approval matrix", "Could Claude help saved")
     check(d["usage"]["spend"] == 412.5, "$ and commas parsed")
     shot = d["usage"]["screenshot"]
     s, d = send("Avery Test", w1, [{**cat, "project": "commission audit tool"}],
@@ -287,7 +294,9 @@ def run():
     check(html.index(">Avery Test<") < html.index(">Blake Test<") < html.index(">Casey Test<"), "digest is by person")
     check("Blocked" not in html and "At risk" not in html and "Status" not in html, "no status anywhere")
     check(html.count(">New this week<") == 2, "new this week marked (Board Deck, Spif); not Commission Audit Tool or Territory Map from last week")
-    check("Drafting the approval matrix" not in html and "Where Claude could have helped" not in html, "no retro section in the report")
+    check("Where Claude could have helped" not in html, "no retro section in the report")
+    check("Could Claude help? Maybe — Drafting the approval matrix" in html and "Non-Claude projects Claude could help with" in html
+          and "ignored for Claude" not in html, "Could Claude help shown on the project and in Claude impact")
     check("could have helped" not in html.lower(), "no 'Claude could have helped' anywhere in the report")
     check("⏳ 2–4 weeks left" in html, "time left shown on each project")
     check("👤 Solo" in html and "👥 With Blake Test, Finance team" in html, "solo / with whom shown (duplicates dropped)")

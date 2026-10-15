@@ -171,7 +171,8 @@ def html(r: dict, note: str = "") -> str:
         b = [f'<div style="font-size:15px;font-weight:bold;margin-bottom:8px"><span style="display:inline-block;width:24px;height:24px;line-height:24px;'
              f'text-align:center;border-radius:12px;background:{col};color:#fff;font-size:10px;margin-right:6px">{escape(initials)}</span>{escape(pp["name"])}</div>']
         for u in pp["projects"]:
-            extra = f'Time saved with Claude: {escape(u["timeSaved"])}' if u["type"] == "Claude" and u.get("timeSaved") else ""
+            extra = (f'Time saved with Claude: {escape(u["timeSaved"])}' if u["type"] == "Claude" and u.get("timeSaved")
+                     else escape(report.fit_text(u)))
             b.append(f'<div style="margin:0 0 12px;padding-left:8px;border-left:3px solid {report.ACCENT if u["type"] == "Claude" else LINE}">'
                      f'<b>{escape(u["project"])}</b><br>{pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'
                      f'{" " + pill("New this week", report.GREEN) if u["new"] else ""}'
