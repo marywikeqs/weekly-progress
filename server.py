@@ -249,7 +249,7 @@ def clean_update(d: dict) -> dict | str:
         return "Pick a project type."
     def lines(key):
         out = [re.sub(r"\s+", " ", str(b)).strip()[:500] for b in (d.get(key) or [])]
-        return [b for b in out if b][:3]
+        return [b for b in out if b][:100]     # as many lines as people need
     bullets, steps = lines("progress"), lines("nextSteps")
     if not bullets:
         return "Add at least one line of progress this week."

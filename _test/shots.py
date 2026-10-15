@@ -78,14 +78,14 @@ try:
         check(c1.locator(".f-team").is_hidden(), "solo: no teammate picker")
         c1.locator(".f-b").first.fill("Cleaned stale opps")
         c1.locator(".f-n").first.fill("Close out Q4 list")
-        check(c1.locator(".f-b").nth(1).is_hidden() and c1.locator(".more").first.is_visible(), "only one progress line until + Add a line")
+        check(c1.locator(".f-b").count() == 1 and c1.locator(".more").first.is_visible(), "one progress line until + Add a line")
         c1.locator(".more").first.click(); c1.locator(".f-b").nth(1).fill("Merged duplicates")
-        c1.locator(".more").first.click()
-        check(c1.locator(".f-b").nth(2).is_visible() and c1.locator(".more").first.is_hidden(), "third line shown, + Add a line gone at three")
-        c1.locator(".f-b").nth(2).fill("Third line")
-        c1.locator(".bullet").nth(1).locator(".x-line").click()     # remove line 2: line 3 moves up
-        check(c1.locator(".f-b").nth(1).input_value() == "Third line" and c1.locator(".f-b").nth(2).is_hidden()
-              and c1.locator(".more").first.is_visible(), "x removes an extra line, the rest move up")
+        for i in range(2, 6):
+            c1.locator(".more").first.click(); c1.locator(".f-b").nth(i).fill(f"Line {i + 1}")
+        check(c1.locator(".f-b").count() == 6 and c1.locator(".more").first.is_visible(), "no limit on progress lines")
+        for _ in range(4):
+            c1.locator(".bullet").nth(2).locator(".x-line").click()
+        check(c1.locator(".f-b").count() == 2 and c1.locator(".f-b").nth(1).input_value() == "Merged duplicates", "x removes an extra line")
         check(c1.locator(".bullet").first.locator(".x-line").count() == 0, "the first line can't be removed")
         c1.locator(".f-b").nth(1).fill("Merged duplicates")
         c1.locator(".done-btn").click()

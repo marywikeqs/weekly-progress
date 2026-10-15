@@ -374,10 +374,10 @@ function addCard(u = {}) {
       <input class="f-how" maxlength="300" placeholder="How? e.g. Drafting the summaries, pulling the data" aria-label="How Claude could help" hidden>
     </div>
     <span class="lbl">Progress this week</span>
-    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-b" rows="1" maxlength="500" aria-label="Progress this week, line ${i + 1}" placeholder="${i ? 'Another line' : 'What moved this week'}"></textarea>${i ? '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>' : ''}</div>`).join('')}
+    <div class="lines" data-cls="f-b" data-label="Progress this week" data-first="What moved this week"></div>
     <button type="button" class="more">+ Add a line</button>
     <span class="lbl">Next steps</span>
-    ${[0, 1, 2].map(i => `<div class="bullet"${i ? ' hidden' : ''}><b>•</b><textarea class="f-n" rows="1" maxlength="500" aria-label="Next steps, line ${i + 1}" placeholder="${i ? 'Another line' : 'What\'s next'}"></textarea>${i ? '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>' : ''}</div>`).join('')}
+    <div class="lines" data-cls="f-n" data-label="Next steps" data-first="What's next"></div>
     <button type="button" class="more">+ Add a line</button>
     <div class="card-err" hidden></div>
     <div class="proj-foot"><button type="button" class="done-btn">Done, collapse ▴</button></div>
@@ -404,8 +404,6 @@ function addCard(u = {}) {
   const teamSync = () => { q('.f-team').hidden = !q('.f-solo input[value=team]').checked; };
   el.querySelectorAll('.f-solo input').forEach(r => r.addEventListener('change', teamSync));
   teamSync();
-  el.querySelectorAll('.f-b').forEach((t, i) => t.value = (u.progress || [])[i] || '');
-  el.querySelectorAll('.f-n').forEach((t, i) => t.value = (u.nextSteps || [])[i] || '');
   const sync = () => {
     const isNew = !learned || q('.f-pick').value === '__new';
     q('.f-new').hidden = !isNew;
@@ -419,22 +417,28 @@ function addCard(u = {}) {
   };
   q('.f-type').onchange = sync;
   const grow = t => { if (t.offsetParent) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; } };
-  el.querySelectorAll('.f-b, .f-n').forEach(t => { t.addEventListener('input', () => grow(t)); requestAnimationFrame(() => grow(t)); });
-  // lines 2 and 3 stay tucked away behind "+ Add a line" until used
-  el.querySelectorAll('.more').forEach(btn => {
-    const lines = [];
-    for (let b = btn.previousElementSibling; b && b.classList.contains('bullet'); b = b.previousElementSibling) lines.unshift(b);
-    lines.forEach((b, i) => { if (i && b.querySelector('textarea').value) b.hidden = false; });
-    const fit = () => { btn.hidden = lines.every(b => !b.hidden); };
-    btn.onclick = () => { const b = lines.find(b => b.hidden); b.hidden = false; const t = b.querySelector('textarea'); grow(t); t.focus(); fit(); };
-    // × on an extra line: lines below move up, the last one tucks away again
-    lines.forEach(b => { const x = b.querySelector('.x-line'); if (x) x.onclick = () => {
-      const vis = lines.filter(l => !l.hidden), ta = l => l.querySelector('textarea');
-      for (let k = vis.indexOf(b); k < vis.length - 1; k++) ta(vis[k]).value = ta(vis[k + 1]).value;
-      const last = vis[vis.length - 1]; ta(last).value = ''; last.hidden = true;
-      vis.forEach(l => grow(ta(l))); fit();
-    }; });
-    fit();
+  // progress and next steps: one line to start, "+ Add a line" adds as many as needed, × removes an extra one
+  const addLine = (box, value = '') => {
+    const row = document.createElement('div'), first = !box.children.length;
+    row.className = 'bullet';
+    row.innerHTML = `<b>•</b><textarea class="${box.dataset.cls}" rows="1" maxlength="500" placeholder="${esc(first ? box.dataset.first : 'Another line')}"></textarea>`
+      + (first ? '' : '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>');
+    const t = row.querySelector('textarea');
+    t.value = value;
+    t.addEventListener('input', () => grow(t));
+    if (!first) row.querySelector('.x-line').onclick = () => { row.remove(); label(); };
+    box.append(row);
+    label();
+    requestAnimationFrame(() => grow(t));
+    return t;
+  };
+  const label = () => el.querySelectorAll('.lines').forEach(box =>
+    box.querySelectorAll('textarea').forEach((t, i) => t.setAttribute('aria-label', `${box.dataset.label}, line ${i + 1}`)));
+  const [pBox, nBox] = el.querySelectorAll('.lines');
+  [[pBox, u.progress], [nBox, u.nextSteps]].forEach(([box, vals]) => {
+    const v = (vals || []).filter(Boolean);
+    (v.length ? v : ['']).forEach(x => addLine(box, x));
+    box.nextElementSibling.onclick = () => addLine(box).focus();
   });
   q('.remove').onclick = () => { el.remove(); renumber(); };
   // Done folds a finished project to a summary line; Edit (or the summary) opens it again
