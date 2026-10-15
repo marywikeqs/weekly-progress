@@ -550,11 +550,11 @@ function taskError(el, text, fields = []) {
 // ---- upcoming project ideas ----
 function addIdea(x = {}) {
   const el = document.createElement('div');
-  el.className = 'task idea';
+  el.className = 'task idea'; const seq = ++ideaSeq;   // one radio group per idea, so only one choice can be picked
   el.innerHTML = `<div class="foot" style="margin-top:0"><input class="i-idea" maxlength="120" placeholder="The idea, e.g. Auto-build QBR decks" aria-label="Project idea">
       <button type="button" class="remove" aria-label="Remove this idea">Remove</button></div>
     <input class="i-why" maxlength="300" placeholder="Why it's worth doing" aria-label="Why it's worth doing">
-    <div class="seg i-status">${Object.entries(CFG.ideaStatus).map(([v, l]) => `<label><input type="radio" name="ist${++ideaSeq}" value="${v}"> ${esc(l)}</label>`).join('')}</div>
+    <div class="seg i-status">${Object.entries(CFG.ideaStatus).map(([v, l]) => `<label><input type="radio" name="ist${seq}" value="${v}"> ${esc(l)}</label>`).join('')}</div>
     <div class="t-err" hidden></div>`;
   const q = s => el.querySelector(s);
   q('.i-idea').value = x.idea || ''; q('.i-why').value = x.why || '';

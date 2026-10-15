@@ -113,7 +113,9 @@ try:
         tk.locator(".t-saved").select_option("Under 1 hr"); tk.locator(".t-note").fill("Two deal reviews")
         pg.click("#add-idea")
         pg.locator(".idea .i-idea").last.fill("Auto-build QBR decks"); pg.locator(".idea .i-why").last.fill("Saves 2 hrs per QBR")
+        pg.locator(".idea .i-status input[value=start]").last.check()
         pg.locator(".idea .i-status input[value=discuss]").last.check()
+        check(pg.locator(".idea").last.locator(".i-status input:checked").count() == 1, "an idea can only have one of the three choices")
         pg.click("#add-idea")   # a second, left blank: skipped on send
         pg.click("#add")   # a third, left blank: skipped on send
         check(pg.locator("#retro").count() == 0, "no Looking back section")
