@@ -493,6 +493,7 @@ USAGE_COLS = [
     ("Requested budget", lambda r: (r.get("increase") or {}).get("amount", "")),
     ("Reason", lambda r: (r.get("increase") or {}).get("reason", "")),
     ("Request status", lambda r: (r.get("increase") or {}).get("status", "")),
+    ("Tweaks", lambda r: "\n".join(f"• {t['project']}: {t['change']}" + (" (Claude)" if t.get("claude") else "") for t in r.get("tweaks", []))),
     ("Upcoming project ideas", lambda r: "\n".join("• " + i["idea"] + (f" [{report.IDEA_STATUS[i['status']]}]" if i.get("status") in report.IDEA_STATUS else "")
                                                      + (f" — {i['why']}" if i.get("why") else "") for i in r.get("ideas", []))),
     ("Screenshot", lambda r: f"/screenshots/{r['screenshot']}" if r.get("screenshot") else ""),
@@ -750,6 +751,20 @@ class Handler(BaseHTTPRequestHandler):
                     errors.append({"idea": i, "error": "Say where the idea stands: need a greenlight, let's discuss, or just an idea."})
                 ideas.append({"idea": idea, "why": why, "status": status})
             ideas = ideas[:10]
+            # tweaks (optional): small changes to an existing project or tool, not a full build
+            tweaks = []
+            for i, x in enumerate(body.get("tweaks") or []):
+                x = x if isinstance(x, dict) else {}
+                proj = re.sub(r"\s+", " ", str(x.get("project") or "")).strip()[:120]
+                change = re.sub(r"\s+", " ", str(x.get("change") or "")).strip()[:300]
+                if not proj and not change:
+                    continue
+                if not proj or not change:
+                    errors.append({"tweak": i, "error": "Name the project and what you changed." if not proj and not change
+                                   else "Name the project or tool." if not proj else "Say what you changed."})
+                known = {p["name"].lower(): p["name"] for p in project_choices()}
+                tweaks.append({"project": known.get(proj.lower(), proj), "change": change, "claude": x.get("claude") is True})
+            tweaks = tweaks[:15]
             cur_use = next((r for r in DATA["usage"] if r["name"] == name and r["week"] == week), None)
             shot = cur_use.get("screenshot") if cur_use else None
             if not errors and not (body.get("usage") or {}).get("screenshot") and not shot:
@@ -765,6 +780,7 @@ class Handler(BaseHTTPRequestHandler):
                                                 "errors": [{"usage": True, "error": "That screenshot couldn't be read."}]})
             usage["screenshot"] = shot
             usage["ideas"] = ideas
+            usage["tweaks"] = tweaks
 
             # projects: replace this person's week with what was sent
             stamp = now()

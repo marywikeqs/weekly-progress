@@ -69,7 +69,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .t-err{color:var(--red);font-size:14px;margin-top:8px}
 #tasks:empty+.add-line{margin-top:0}
 .add-line{background:none;border:0;font:inherit;font-weight:600;color:var(--accent);cursor:pointer;padding:6px 0;margin-top:8px}
-#tasks-empty,#ideas-empty{color:var(--muted);font-size:14px;margin:0 0 4px}
+#tasks-empty,#ideas-empty,#tweaks-empty{color:var(--muted);font-size:14px;margin:0 0 4px}
+.tweak .w-change{margin-top:8px}.tweak .w-proj{flex:1}
+.tweak .w-claude{display:flex;gap:6px;align-items:center;margin:8px 0 0;font-weight:500;font-size:14px}.tweak .w-claude input{width:auto;margin:0;accent-color:var(--accent)}
 .idea .i-why{margin-top:8px}.idea .seg{margin-top:8px;flex-wrap:wrap}.idea .seg label{flex:1 1 120px}.idea .seg label{font-size:14px}.idea .i-idea{flex:1}
 .note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;margin-bottom:12px}
 .instructions{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14px;white-space:pre-line;margin-bottom:8px}
@@ -116,6 +118,14 @@ button:disabled{opacity:.6;cursor:default}
     <h2>Projects <span class="count" id="proj-count"></span></h2>
     <div id="projects"></div>
     <button type="button" class="add" id="add">+ Add another project</button>
+
+    <h2>Tweaks <span class="opt">Small changes to an existing project or tool, not a full build (optional)</span></h2>
+    <div class="card">
+      <div id="tweaks"></div>
+      <p id="tweaks-empty">Nothing added.</p>
+      <button type="button" class="add-line" id="add-tweak">+ Add a tweak</button>
+      <datalist id="tweak-projects"></datalist>
+    </div>
 
     <h2>Other work <span class="opt">Support Hub, Deal Desk, ad hoc analysis and the like (optional)</span></h2>
     <div class="card">
@@ -232,6 +242,7 @@ async function init() {
   $('name').onchange = () => { store('wp-name', $('name').value); load(); };
   $('add-task').onclick = () => addTask().querySelector('.t-cat').focus();
   $('add-idea').onclick = () => addIdea().querySelector('.i-idea').focus();
+  $('add-tweak').onclick = () => addTweak().querySelector('.w-proj').focus();
   $('add').onclick = () => { foldFinished(); const c = addCard(); c.querySelector('.f-pick:not([hidden]), .f-new:not([hidden])').focus(); };
   document.querySelectorAll('input[name=inc]').forEach(r => r.onchange = () => { $('inc-wrap').hidden = incValue() !== true; });
   $('shot').onchange = onShot;
@@ -240,7 +251,7 @@ async function init() {
   // drafts: saved a few seconds after any change, or right away with Save draft
   $('form').addEventListener('input', draftSoon);
   $('form').addEventListener('change', draftSoon);
-  $('form').addEventListener('click', e => { if (e.target.closest('.remove, .x-line, #add, #add-task, #add-idea')) draftSoon(); });
+  $('form').addEventListener('click', e => { if (e.target.closest('.remove, .x-line, #add, #add-task, #add-idea, #add-tweak')) draftSoon(); });
   $('save-draft').onclick = () => saveDraft(true);
   addEventListener('pagehide', () => { if (draftTimer) saveDraft(false, true); });
   load();
@@ -275,6 +286,10 @@ async function load() {
   if (MINE.updates.length || MINE.usage) MINE.tasks.forEach(t => addTask(t));
   else MINE.lastTasks.forEach(t => addTask({category: t.category, claude: t.claude}));   // recurring work carries over
   tasksEmpty();
+  $('tweak-projects').innerHTML = CFG.projects.map(p => `<option value="${esc(p.name)}">`).join('');
+  $('tweaks').innerHTML = '';
+  (MINE.usage?.tweaks || []).forEach(x => addTweak(x));
+  tweaksEmpty();
   $('ideas').innerHTML = '';
   (MINE.usage?.ideas || []).forEach(x => addIdea(x));
   ideasEmpty();
@@ -295,7 +310,7 @@ async function load() {
 // ---- drafts: the form as typed, kept on the server until sent ----
 function readForm() {
   return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('#tasks .task')].map(readTask),
-          ideas: [...document.querySelectorAll('.idea')].map(readIdea), spend: $('spend').value, budget: $('budget').value, inc: incValue(),
+          tweaks: [...document.querySelectorAll('.tweak')].map(readTweak), ideas: [...document.querySelectorAll('.idea')].map(readIdea), spend: $('spend').value, budget: $('budget').value, inc: incValue(),
           incAmount: $('inc-amount').value, incStatus: $('inc-status').value, incReason: $('inc-reason').value};
 }
 function applyForm(f) {
@@ -306,6 +321,9 @@ function applyForm(f) {
   $('tasks').innerHTML = '';
   (f.tasks || []).forEach(t => addTask(t));
   tasksEmpty();
+  $('tweaks').innerHTML = '';
+  (f.tweaks || []).forEach(x => addTweak(x));
+  tweaksEmpty();
   $('ideas').innerHTML = '';
   (f.ideas || []).forEach(x => addIdea(x));
   ideasEmpty();
@@ -566,6 +584,27 @@ function taskError(el, text, fields = []) {
   const e = el.querySelector('.t-err'); e.textContent = text; e.hidden = !text;
 }
 
+// ---- tweaks: small changes to an existing project or tool ----
+function addTweak(x = {}) {
+  const el = document.createElement('div');
+  el.className = 'task tweak';
+  el.innerHTML = `<div class="foot" style="margin-top:0"><input class="w-proj" maxlength="120" list="tweak-projects" placeholder="Project or tool, e.g. Commission Plan Builder" aria-label="Project or tool tweaked">
+      <button type="button" class="remove" aria-label="Remove this tweak">Remove</button></div>
+    <input class="w-change" maxlength="300" placeholder="What you changed, e.g. Added the 2027 accelerator tiers" aria-label="What you changed">
+    <label class="w-claude"><input type="checkbox"> Used Claude</label>
+    <div class="t-err" hidden></div>`;
+  const q = s => el.querySelector(s);
+  q('.w-proj').value = x.project || ''; q('.w-change').value = x.change || ''; q('.w-claude input').checked = !!x.claude;
+  el.addEventListener('input', () => { el.querySelectorAll('.invalid').forEach(i => i.classList.remove('invalid')); q('.t-err').hidden = true; });
+  q('.remove').onclick = () => { el.remove(); tweaksEmpty(); };
+  $('tweaks').append(el);
+  tweaksEmpty();
+  return el;
+}
+function tweaksEmpty() { $('tweaks-empty').hidden = !!$('tweaks').children.length; }
+const readTweak = el => ({project: el.querySelector('.w-proj').value.trim(), change: el.querySelector('.w-change').value.trim(),
+                          claude: el.querySelector('.w-claude input').checked});
+
 // ---- upcoming project ideas ----
 function addIdea(x = {}) {
   const el = document.createElement('div');
@@ -662,6 +701,15 @@ async function send(ev) {
     taskError(el, bad.map(b => b[1]).join(' '), bad.map(b => b[0]));
     if (bad.length && !firstBad) firstBad = el;
   });
+  // tweaks: blank ones are skipped; a filled one needs both the project and the change
+  const tweakEls = [...document.querySelectorAll('.tweak')].filter(el => { const d = readTweak(el); return d.project || d.change; });
+  tweakEls.forEach(el => {
+    const d = readTweak(el);
+    el.querySelector('.w-proj').classList.toggle('invalid', !d.project);
+    el.querySelector('.w-change').classList.toggle('invalid', !d.change);
+    taskError(el, !d.project ? 'Name the project or tool.' : !d.change ? 'Say what you changed.' : '');
+    if ((!d.project || !d.change) && !firstBad) firstBad = el;
+  });
   // ideas: blank ones are skipped; a "why" needs the idea itself, and each says where it stands
   const ideaEls = [...document.querySelectorAll('.idea')].filter(el => { const d = readIdea(el); return d.idea || d.why || d.status; });
   ideaEls.forEach(el => {
@@ -681,7 +729,7 @@ async function send(ev) {
 
   const inc = incValue();
   const body = {
-    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), ideas: ideaEls.map(readIdea),
+    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), tweaks: tweakEls.map(readTweak), ideas: ideaEls.map(readIdea),
     usage: {spend: num($('spend').value), budget: num($('budget').value), increaseRequested: inc,
             increase: inc ? {amount: num($('inc-amount').value), reason: $('inc-reason').value.trim(), status: $('inc-status').value} : null,
             screenshot: shotData},
@@ -696,6 +744,7 @@ async function send(ev) {
     (e.body?.errors || []).forEach(x => {
       if (x.usage) { $('usage-err').textContent = x.error; $('usage-err').hidden = false; }
       else if (x.task != null && taskEls[x.task]) taskError(taskEls[x.task], x.error);
+      else if (x.tweak != null && tweakEls[x.tweak]) taskError(tweakEls[x.tweak], x.error);
       else if (x.idea != null && ideaEls[x.idea]) taskError(ideaEls[x.idea], x.error);
       else if (x.project != null && used[x.project]) cardError(used[x.project], x.error);
     });

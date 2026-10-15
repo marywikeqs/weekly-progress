@@ -196,6 +196,11 @@ def html(r: dict, note: str = "") -> str:
         rows = ['<tr>' + cards[i] + '<td width="12" style="width:12px;font-size:0">&nbsp;</td>' + cards[i + 1] + '</tr>' for i in range(0, len(cards), 2)]
         o.append('<table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:separate;table-layout:fixed;font-size:13px">'
                  + '<tr><td colspan="3" height="12" style="height:12px;font-size:0">&nbsp;</td></tr>'.join(rows) + "</table>")
+    if r["tweaks"]:
+        o.append(f'<h2 {h2}>Tweaks</h2><ul style="margin:0;padding-left:18px">'
+                 + "".join(f'<li style="margin:0 0 6px"><b>{escape(t["project"])}</b> <span style="color:{MUTED}">· {escape(t["name"])}</span>'
+                           + (f' <span style="font-size:12px;font-weight:bold;color:{ACCENT}">· Claude</span>' if t["claude"] else "")
+                           + f'<br><span style="color:{MUTED};font-size:13px">{escape(t["change"])}</span></li>' for t in r["tweaks"]) + "</ul>")
     if r["ideas"]:
         o.append(f'<h2 {h2}>Upcoming project ideas</h2><ul style="margin:0;padding-left:18px">'
                  + "".join(f'<li style="margin:0 0 6px"><b>{escape(i["idea"])}</b> <span style="color:{MUTED}">· {escape(i["name"])}</span>'

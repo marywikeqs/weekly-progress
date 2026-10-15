@@ -164,6 +164,8 @@ def build(data: dict, week: str) -> dict:
                 i["people"].append(t["name"])
     top = sorted((i for i in impact.values() if i["hours"] > 0), key=lambda i: (-i["hours"], i["project"].lower()))[:5]
 
+    # tweaks: small changes to existing projects or tools, by person
+    tweaks = [{"name": u["name"], **t} for u in sorted(cur["usage"], key=lambda u: u["name"]) for t in u.get("tweaks", [])]
     # upcoming project ideas, by person
     ideas = [{"name": u["name"], **i} for u in sorted(cur["usage"], key=lambda u: u["name"]) for i in u.get("ideas", [])]
 
@@ -187,7 +189,7 @@ def build(data: dict, week: str) -> dict:
     return {
         "week": week, "prevWeek": prev, "hasPrev": has_prev, "sameMonth": same_month,
         "cur": cur, "last": last, "participation": participation,
-        "people": people, "other": other_groups, "top": top, "ideas": ideas,
+        "people": people, "other": other_groups, "top": top, "ideas": ideas, "tweaks": tweaks,
         "fits": sorted((u for u in cur["updates"] if u.get("claudeFit") in ("Yes", "Maybe")),
                        key=lambda u: (u["claudeFit"] != "Yes", u["project"].lower())),
         "spend": spend_rows, "requests": requests,
@@ -227,6 +229,9 @@ def render_text(r: dict, base_url: str = "") -> str:
     top = ", ".join(f"{t['project']} ({t['hours']:g} hrs)" for t in r["top"][:3])
     lines.append(f"*Claude time saved:* ~{c['hours']:g} hrs{_delta(c['hours'], l['hours'], hp, ' hrs')}"
                  + (f" · top: {top}" if top else ""))
+    if r["tweaks"]:
+        lines.append("*Tweaks:*")
+        lines += [f"   • {t['name']}: {t['project']} — {t['change']}" + (" (Claude)" if t["claude"] else "") for t in r["tweaks"]]
     if r["fits"]:
         lines.append("*Non-Claude projects Claude could help with:*")
         lines += [f"   • {u['project']} ({u['name']}, {u['claudeFit']}): {u['claudeHow']}" for u in r["fits"]]
@@ -409,6 +414,7 @@ def render_html(r: dict, weeks: list) -> str:
 <a href="#glance" style="--c:{ORANGE}"><i></i><em>At a glance</em><span></span></a>
 <a href="#digest" style="--c:{BLUE}"><i></i><em>The week, by person</em><span>{c['projects']} proj · {len(c['tasks'])} other</span></a>
 {"".join(f'<a href="#p-{i}" style="--c:{pc[pp["name"]]};padding-left:26px"><i></i><em>{escape(pp["name"])}</em><span>{len(pp["projects"]) + len(pp["tasks"])}</span></a>' for i, pp in enumerate(r["people"]))}
+<a href="#tweaks" style="--c:{GRAPE}"><i></i><em>Tweaks</em><span>{len(r['tweaks'])}</span></a>
 <a href="#ideas" style="--c:{TEAL}"><i></i><em>Upcoming ideas</em><span>{len(r['ideas'])}</span></a>
 <a href="#impact" style="--c:{ACCENT}"><i></i><em>Claude impact</em><span>{c['hours']:g} hrs</span></a>
 <a href="#spend" style="--c:{GRAPE}"{' class="alert"' if r['flagged'] else ''}><i></i><em>Usage and spend</em><span>{money(c['spend'])}</span></a></nav>
@@ -482,6 +488,17 @@ def render_html(r: dict, weeks: list) -> str:
                      + (f'<div class="meta">{escape(t["note"])}</div>' if t.get("note") else "") + "</div></div>")
         o.append("</div>")
     o.append("</div>")
+
+    # tweaks
+    o.append(f'<h2 id="tweaks" style="--c:{GRAPE}">Tweaks <span>{len(r["tweaks"])}</span></h2>'
+             '<p class="note">Small changes to existing projects and tools, short of a full build.</p>')
+    if r["tweaks"]:
+        o.append('<ul class="ideas">' + "".join(
+            f'<li>{_av(t["name"], pc.get(t["name"], BLUE), "sm")}<div><strong>{escape(t["project"])}</strong> <span class="label">{escape(t["name"])}</span>'
+            + (" " + _pill("Claude", ACCENT) if t["claude"] else "")
+            + f'<div class="why">{escape(t["change"])}</div></div></li>' for t in r["tweaks"]) + "</ul>")
+    else:
+        o.append('<p class="empty">No tweaks this week.</p>')
 
     # upcoming project ideas
     o.append(f'<h2 id="ideas" style="--c:{TEAL}">Upcoming project ideas <span>{len(r["ideas"])}</span></h2>')

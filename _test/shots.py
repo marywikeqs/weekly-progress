@@ -116,6 +116,9 @@ try:
         tk.locator(".t-claude").select_option("yes")
         check(tk.locator(".t-saved").is_visible(), "Used Claude shows time saved")
         tk.locator(".t-saved").select_option("Under 1 hr"); tk.locator(".t-note").fill("Two deal reviews")
+        pg.click("#add-tweak")
+        pg.locator(".tweak .w-proj").last.fill("Commission Plan Builder"); pg.locator(".tweak .w-change").last.fill("Added 2027 tiers")
+        pg.locator(".tweak .w-claude input").last.check()
         pg.click("#add-idea")
         pg.locator(".idea .i-idea").last.fill("Auto-build QBR decks"); pg.locator(".idea .i-why").last.fill("Saves 2 hrs per QBR")
         pg.locator(".idea .i-status input[value=start]").last.check()
@@ -140,6 +143,8 @@ try:
               "draft: finished projects come back folded, the blank one open")
         check(pg.locator(".proj").nth(1).locator(".chips input[value='Casey Test']").is_checked()
               and pg.locator(".proj").nth(1).locator(".f-others").input_value() == "Finance team", "draft restores who's working on it")
+        check(pg.locator(".tweak").count() == 1 and pg.locator(".tweak .w-change").input_value() == "Added 2027 tiers"
+              and pg.locator(".tweak .w-claude input").is_checked(), "draft restores tweaks")
         check(pg.locator(".idea").count() == 2 and pg.locator(".idea .i-idea").first.input_value() == "Auto-build QBR decks"
               and pg.locator(".idea .i-status input[value=discuss]").first.is_checked(), "draft restores ideas")
         check(pg.input_value("#spend") == "75" and pg.is_checked("input[name=inc][value=no]"), "draft restores usage")
