@@ -1,16 +1,21 @@
 """Sends a person's projects to their own Todoist when they submit.
 
 Each project is one task in the shared "Weekly Progress" Todoist project
-(their Inbox if they're not in it yet), assigned to the person who sent it,
-with its next steps as subtasks. A project is never created twice:
+(their Inbox if they're not in it yet), assigned to the person who made it,
+with its next steps as subtasks assigned to whoever sent them. Teammates on the
+same project share its one task: each person's weekly update is a comment on
+it (one per person per week, edited on a resend). A project is never created twice:
   * its task id is kept, and reused every week, wherever the task was moved;
   * a completed project task is reopened rather than replaced;
-  * with no id on file (a deleted task, a reconnected account), an open task
-    of theirs with the same name is adopted before a new one is made;
+  * with no id on file, a teammate's task for the project is used (in the
+    shared project), then an open task with the same name (theirs first),
+    before a new one is made;
   * tasks made before the project existed are moved into it.
 Next steps follow the form: new ones are added, ones already open aren't
 added again, and steps this app added that drop off the list are completed.
 Subtasks the person added in Todoist themselves are left alone.
+Going the other way, done_steps() tells the form which of last week's next
+steps were checked off in Todoist, so they start the new week as done.
 
 Uses Todoist's API v1 with the person's own API token (Todoist Settings ->
 Integrations -> Developer). TODOIST_API overrides the address, for tests.
@@ -101,15 +106,44 @@ def _mine(t: dict, me) -> bool:
     return (who == me) if who else (t.get("added_by_uid") or t.get("creator_id")) == me
 
 
-def send(token: str, projects: list, known: dict) -> dict:
-    """One task per project in the Weekly Progress project, next steps as its
-    subtasks, the sender as owner (assignee), nothing duplicated.
+def done_steps(token: str, known: dict) -> dict:
+    """{project (lower-cased): [step (normalised)]}: next steps this app added that are no longer
+    open in Todoist, i.e. the person checked them off there. Projects whose task is gone are skipped."""
+    out = {}
+    for key, rec in known.items():
+        if isinstance(rec, str) or not rec.get("steps"):
+            continue
+        task = _call(token, "GET", f"/tasks/{rec['id']}")
+        if not task or task.get("is_deleted"):
+            continue
+        open_ids = {t["id"] for t in _all(token, "/tasks", parent_id=task["id"]) if not _done(t)}
+        gone = [n for n, sid in rec["steps"].items() if sid not in open_ids]
+        if gone:
+            out[key] = gone
+    return out
 
-    known maps a lower-cased project name to {"id": task id, "steps": {step: subtask id}}
-    (an older plain id string is accepted); it's updated in place.
-    Returns {"projects": n, "steps": added, "closed": n[, "note": ...]} or raises TodoistError.
+
+def comment_text(u: dict, sender: str, week: str) -> str:
+    lines = [f"**{sender}**: weekly update" + (f", week ending {week}" if week else "")]
+    if u.get("progress"):
+        lines += ["", "Progress:"] + [f"- {x}" for x in u["progress"]]
+    if u.get("nextSteps"):
+        lines += ["", "Next steps:"] + [f"- {x}" for x in u["nextSteps"]]
+    return "\n".join(lines)
+
+
+def send(token: str, projects: list, known: dict, week: str = "", sender: str = "", others: dict | None = None) -> dict:
+    """One task per project in the Weekly Progress project, shared by everyone on it,
+    next steps as subtasks owned by whoever sent them, this week's update as a comment,
+    nothing duplicated.
+
+    known maps a lower-cased project name to {"id": task id, "steps": {step: subtask id},
+    "comments": {week: comment id}} (an older plain id string is accepted); it's updated in place.
+    others maps a lower-cased project name to a teammate's task id for it.
+    Returns {"projects": n, "steps": added, "closed": n, "comments": n[, "note": ...]} or raises TodoistError.
     """
-    out = {"projects": 0, "steps": 0, "closed": 0}
+    out = {"projects": 0, "steps": 0, "closed": 0, "comments": 0}
+    others = others or {}
     proj, me = _where(token)
     pid = proj["id"] if proj else None
     shared = bool(proj and proj.get("is_shared"))              # Todoist only takes an assignee in a shared project
@@ -127,13 +161,21 @@ def send(token: str, projects: list, known: dict) -> dict:
         task = _call(token, "GET", f"/tasks/{rec['id']}") if rec.get("id") else None
         if task and task.get("is_deleted"):
             task = None
+        if not task and shared and others.get(key):         # a teammate already has this project's task
+            task = _call(token, "GET", f"/tasks/{others[key]}")
+            if task and task.get("is_deleted"):
+                task = None
+            if task:
+                rec = {**rec, "id": task["id"]}
         if task and _done(task):
             _call(token, "POST", f"/tasks/{task['id']}/reopen")          # still going: bring it back
         if not task:
             if open_tops is None:
+                # open top-level tasks by name: mine first; a teammate's only in the shared project
                 open_tops = {}
-                for t in _all(token, "/tasks", **where):
-                    if not t.get("parent_id") and _mine(t, me):          # never someone else's task
+                tops = [t for t in _all(token, "/tasks", **where) if not t.get("parent_id")]
+                for t in sorted(tops, key=lambda t: not _mine(t, me)):
+                    if _mine(t, me) or shared:
                         open_tops.setdefault(_norm(t.get("content")), t)
             task = open_tops.get(_norm(u["project"]))
             if not task:
@@ -141,23 +183,25 @@ def send(token: str, projects: list, known: dict) -> dict:
                 if not task or not task.get("id"):
                     raise TodoistError("Todoist didn't create the task.")
                 open_tops[_norm(u["project"])] = task
-            rec = {"id": task["id"], "steps": {}}
+            rec = {**rec, "id": task["id"], "steps": {}}
         if shared and not me:      # no user id from /user: whoever made this person's task is them
             me = task.get("added_by_uid") or task.get("creator_id")
             assign, owner = bool(me), ({"assignee_id": me} if me else {})
         if pid and task.get("project_id") != pid:
             _call(token, "POST", f"/tasks/{task['id']}/move", {"project_id": pid})   # its subtasks come along
-        _call(token, "POST", f"/tasks/{task['id']}", {"content": u["project"], "description": describe(u),
-                                                     **(owner if not (task.get("responsible_uid") or task.get("assignee_id")) else {})})
+        if _mine(task, me) or not (task.get("responsible_uid") or task.get("assignee_id")):   # a teammate's task keeps its wording
+            _call(token, "POST", f"/tasks/{task['id']}", {"content": u["project"], "description": describe(u),
+                                                         **(owner if not (task.get("responsible_uid") or task.get("assignee_id")) else {})})
 
         subs = [t for t in _all(token, "/tasks", parent_id=task["id"]) if not _done(t)]
         open_by_text = {_norm(t.get("content")): t["id"] for t in subs}
         open_ids = {t["id"] for t in subs}
-        if assign:      # subtasks with no owner yet become the sender's
-            for t in subs:
-                if not (t.get("responsible_uid") or t.get("assignee_id")):
-                    _call(token, "POST", f"/tasks/{t['id']}", owner)
         want, steps = set(), {}
+        mine_now = {_norm(s) for s in u.get("nextSteps", [])}
+        if assign:      # this person's steps with no owner yet become theirs (a teammate's are left alone)
+            for t in subs:
+                if _norm(t.get("content")) in mine_now and not (t.get("responsible_uid") or t.get("assignee_id")):
+                    _call(token, "POST", f"/tasks/{t['id']}", owner)
         for step in u.get("nextSteps", []):
             n = _norm(step)
             if n in want:
@@ -174,6 +218,16 @@ def send(token: str, projects: list, known: dict) -> dict:
             if n not in want and sid in open_ids:
                 _call(token, "POST", f"/tasks/{sid}/close")
                 out["closed"] += 1
-        known[key] = {"id": task["id"], "steps": {n: s for n, s in steps.items() if s}}
+        # this week's update as a comment on the task; a resend edits it rather than adding another
+        comments = dict(rec.get("comments") or {})
+        if u.get("progress") or u.get("nextSteps"):
+            text, cid = comment_text(u, sender, week), comments.get(week)
+            c = _call(token, "POST", f"/comments/{cid}", {"content": text}) if cid else None
+            if not c:
+                c = _call(token, "POST", "/comments", {"task_id": task["id"], "content": text})
+                out["comments"] += 1
+            if c and c.get("id"):
+                comments[week] = c["id"]
+        known[key] = {"id": task["id"], "steps": {n: s for n, s in steps.items() if s}, "comments": comments}
         out["projects"] += 1
     return out

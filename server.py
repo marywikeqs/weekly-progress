@@ -619,10 +619,21 @@ class Handler(BaseHTTPRequestHandler):
                 prev_tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == prev_week]
                 draft = DATA["drafts"].get(f"{name}|{week}")
                 linked = name in DATA["todoist"]["tokens"]
-            # A new week starts from last week's projects, other work and budget.
+                token = DATA["todoist"]["tokens"].get(name)
+                known = {k[len(name) + 1:]: v for k, v in DATA["todoist"]["tasks"].items()
+                         if k.startswith(name + "|") and k[len(name) + 1:] in {u["project"].lower() for u in prev}}
+            # A new week starts from last week's projects (with their next steps), other work and budget.
+            # Steps checked off in Todoist since then come back marked done; Todoist trouble just means no marks.
+            done = {}
+            if token and known and not ups:
+                try:
+                    done = todoist.done_steps(token, known)
+                except todoist.TodoistError:
+                    pass
             return self.send_json(200, {"updates": ups, "usage": use, "tasks": tasks,
                                         "lastBudget": earlier[-1]["budget"] if earlier else None,
-                                        "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft, "todoist": linked})
+                                        "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft, "todoist": linked,
+                                        "todoistDone": done})
 
         # admin only from here
         if path in ("/admin", "/admin.html"):
@@ -821,8 +832,11 @@ class Handler(BaseHTTPRequestHandler):
             with TODOIST_LOCKS.setdefault(name, threading.Lock()):
                 with LOCK:
                     known = {k[len(prefix):]: v for k, v in DATA["todoist"]["tasks"].items() if k.startswith(prefix)}
+                    # teammates' tasks for the same projects, so everyone's update lands on one task
+                    others = {k.split("|", 1)[1]: (v if isinstance(v, str) else v.get("id"))
+                              for k, v in DATA["todoist"]["tasks"].items() if not k.startswith(prefix)}
                 try:
-                    out["todoist"] = todoist.send(token, saved, known)
+                    out["todoist"] = todoist.send(token, saved, known, week, name, {k: v for k, v in others.items() if v})
                 except todoist.TodoistError as e:
                     out["todoist"] = {"error": str(e)}
                 with LOCK:

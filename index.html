@@ -37,6 +37,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 .f-fit .f-how{margin-top:8px}
 .x-line{flex:none;background:none;border:0;color:var(--muted);font-size:20px;line-height:1;padding:10px 4px;cursor:pointer;border-radius:6px}
 .x-line:hover{color:var(--red)}
+.done-step{flex:none;align-self:center;background:var(--card);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:6px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.done-step:hover{border-color:#058527;color:#058527;background:#f0faf2}
 .more{background:none;border:0;font:inherit;font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;padding:0 0 4px 20px}
 .seg{display:flex;gap:8px}.seg label{flex:1;margin:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .seg input{width:auto;margin:0}.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
@@ -258,7 +260,7 @@ async function init() {
   // drafts: saved a few seconds after any change, or right away with Save draft
   $('form').addEventListener('input', draftSoon);
   $('form').addEventListener('change', draftSoon);
-  $('form').addEventListener('click', e => { if (e.target.closest('.remove, .x-line, #add, #add-task, #add-idea, #add-tweak')) draftSoon(); });
+  $('form').addEventListener('click', e => { if (e.target.closest('.remove, .x-line, .done-step, #add, #add-task, #add-idea, #add-tweak')) draftSoon(); });
   $('save-draft').onclick = () => saveDraft(true);
   addEventListener('pagehide', () => { if (draftTimer) saveDraft(false, true); });
   load();
@@ -284,9 +286,18 @@ async function load() {
     st.hidden = false;
   } else {
     const carry = MINE.lastProjects;
-    carry.forEach(u => addCard({project: u.project, type: u.type, timeLeft: u.timeLeft, solo: u.solo, with: u.with, claudeFit: u.claudeFit, claudeHow: u.claudeHow}));
+    const norm = s => String(s || '').split(/\s+/).filter(Boolean).join(' ').toLowerCase();
+    let fromTodoist = 0;
+    carry.forEach(u => {
+      const done = new Set((MINE.todoistDone || {})[u.project.toLowerCase()] || []);
+      const steps = u.nextSteps || [], finished = steps.filter(s => done.has(norm(s)));
+      fromTodoist += finished.length;
+      addCard({project: u.project, type: u.type, timeLeft: u.timeLeft, solo: u.solo, with: u.with, claudeFit: u.claudeFit, claudeHow: u.claudeHow,
+               progress: finished, nextSteps: steps.filter(s => !done.has(norm(s))), carried: true});
+    });
     if (!carry.length) addCard();
-    st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Update each one (check the time left), and remove any you didn't work on this week.` : '';
+    st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Last week's next steps are filled in: click ✓ Done on each one you finished and it moves to Progress. Update each project (check the time left), and remove any you didn't work on this week.`
+      + (fromTodoist ? ` ${fromTodoist} step${fromTodoist === 1 ? ' you' : 's you'} checked off in Todoist ${fromTodoist === 1 ? 'is' : 'are'} already in Progress.` : '') : '';
     st.hidden = !carry.length;
   }
   $('tasks').innerHTML = '';
@@ -438,15 +449,26 @@ function addCard(u = {}) {
   q('.f-type').onchange = sync;
   const grow = t => { if (t.offsetParent) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; } };
   // progress and next steps: one line to start, "+ Add a line" adds as many as needed, × removes an extra one
-  const addLine = (box, value = '') => {
+  // a next step carried from last week gets ✓ Done, which moves it to Progress
+  const addLine = (box, value = '', carried = false) => {
     const row = document.createElement('div'), first = !box.children.length;
     row.className = 'bullet';
     row.innerHTML = `<b>•</b><textarea class="${box.dataset.cls}" rows="1" maxlength="500" placeholder="${esc(first ? box.dataset.first : 'Another line')}"></textarea>`
+      + (carried ? '<button type="button" class="done-step" title="Finished: move it to Progress this week">✓ Done</button>' : '')
       + (first ? '' : '<button type="button" class="x-line" aria-label="Remove this line" title="Remove this line">×</button>');
     const t = row.querySelector('textarea');
     t.value = value;
     t.addEventListener('input', () => grow(t));
     if (!first) row.querySelector('.x-line').onclick = () => { row.remove(); label(); };
+    if (carried) row.querySelector('.done-step').onclick = () => {
+      const text = t.value.trim();
+      if (text) {
+        const empty = [...pBox.querySelectorAll('textarea')].find(x => !x.value.trim());
+        if (empty) { empty.value = text; grow(empty); } else addLine(pBox, text);
+      }
+      if (box.children.length > 1) row.remove(); else { t.value = ''; row.querySelector('.done-step').remove(); }
+      label();
+    };
     box.append(row);
     label();
     requestAnimationFrame(() => grow(t));
@@ -457,7 +479,7 @@ function addCard(u = {}) {
   const [pBox, nBox] = el.querySelectorAll('.lines');
   [[pBox, u.progress], [nBox, u.nextSteps]].forEach(([box, vals]) => {
     const v = (vals || []).filter(Boolean);
-    (v.length ? v : ['']).forEach(x => addLine(box, x));
+    (v.length ? v : ['']).forEach(x => addLine(box, x, u.carried && box === nBox && !!x));
     box.nextElementSibling.onclick = () => addLine(box).focus();
   });
   q('.remove').onclick = () => { el.remove(); renumber(); };
@@ -772,7 +794,7 @@ function showDone(r) {
       ${r.tasks.map(x => `<li><span style="color:var(--green)">✓</span><span style="flex:1">${esc(x.category)}</span><span class="sub">${esc(x.note)}</span></li>`).join('')}</ul>
     ${!r.todoist ? '' : r.todoist.error
       ? `<p class="note" style="margin-top:16px">Your update is saved, but it didn't reach Todoist: ${esc(r.todoist.error)}</p>`
-      : `<p class="sub" style="margin-top:16px">Sent to your Todoist: ${r.todoist.projects} project${r.todoist.projects === 1 ? '' : 's'}, ${r.todoist.steps} new next step${r.todoist.steps === 1 ? '' : 's'}${r.todoist.closed ? `, ${r.todoist.closed} finished step${r.todoist.closed === 1 ? '' : 's'} checked off` : ''}.</p>`
+      : `<p class="sub" style="margin-top:16px">Sent to your Todoist: ${r.todoist.projects} project${r.todoist.projects === 1 ? '' : 's'}, ${r.todoist.steps} new next step${r.todoist.steps === 1 ? '' : 's'}${r.todoist.closed ? `, ${r.todoist.closed} finished step${r.todoist.closed === 1 ? '' : 's'} checked off` : ''}. Your update is a comment on each project's task, so everyone on a project sees each other's.</p>`
         + (r.todoist.note ? `<p class="note">${esc(r.todoist.note)}</p>` : '')}
     <p style="margin:24px 0 0"><button type="button" class="primary" id="edit">Make a change</button></p>`;
   $('done').hidden = false; $('form').hidden = $('sendbar').hidden = true;

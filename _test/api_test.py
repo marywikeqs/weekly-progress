@@ -41,6 +41,8 @@ SENT = []          # emails the fake Resend received
 TODO = {}          # the fake Todoist's tasks, by id
 TODO_IDS = itertools.count(1)
 GOOD_TOKEN = "a1" * 20
+TEAM_TOKEN = "d4" * 20      # a teammate's Todoist (user u2)
+COMMENTS = {}      # the fake Todoist's comments, by id
 PROJECTS = [{"id": "inbox", "name": "Inbox", "inbox_project": True}, {"id": "wp", "name": "Weekly Progress", "is_shared": True}]
 
 
@@ -51,13 +53,24 @@ class FakeResend(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(body).encode() if body is not None else b"")
 
     def _todoist(self, method):
-        if self.headers.get("Authorization") != f"Bearer {GOOD_TOKEN}":
+        uid = {f"Bearer {GOOD_TOKEN}": "u1", f"Bearer {TEAM_TOKEN}": "u2"}.get(self.headers.get("Authorization"))
+        if not uid:
             return self._json(401, {"error": "bad token"})
         path, _, query = self.path[len("/todoist"):].partition("?")
         q = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}") if method == "POST" else {}
         if path == "/user":
-            return self._json(200, {"id": "u1", "full_name": "Casey Test"})
+            return self._json(200, {"id": uid})
+        if path == "/comments":
+            c = {"id": f"c{next(TODO_IDS)}", "task_id": body["task_id"], "content": body["content"], "posted_uid": uid}
+            COMMENTS[c["id"]] = c
+            return self._json(200, c)
+        if path.startswith("/comments/"):
+            cid = path.rsplit("/", 1)[-1]
+            if cid not in COMMENTS:
+                return self._json(404, {"error": "not found"})
+            COMMENTS[cid].update(body)
+            return self._json(200, COMMENTS[cid])
         if path == "/projects":
             return self._json(200, {"results": PROJECTS, "next_cursor": None})
         if path == "/tasks" and method == "GET":     # active tasks only
@@ -79,7 +92,7 @@ class FakeResend(BaseHTTPRequestHandler):
             par = TODO.get(body.get("parent_id")) or {}
             t = {"id": f"t{next(TODO_IDS)}", "content": body["content"], "description": body.get("description", ""), "parent_id": body.get("parent_id"),
                  "project_id": body.get("project_id") or par.get("project_id") or "inbox", "responsible_uid": body.get("assignee_id"),
-                 "added_by_uid": "u1", "checked": False}
+                 "added_by_uid": uid, "checked": False}
             TODO[t["id"]] = t
             return self._json(200, t)
         tid = path.rsplit("/", 1)[-1]
@@ -457,14 +470,14 @@ def run():
            proj("Territory Map", "Non-Claude", "", ["Drafted"], steps=["Review with Cora"])]
     s, d = send("Casey Test", w9, two, use)
     parents = [t for t in TODO.values() if not t["parent_id"]]
-    check(s == 200 and d["todoist"] == {"projects": 2, "steps": 3, "closed": 0}, f"send creates a task per project and its next steps: {d.get('todoist')}")
+    check(s == 200 and d["todoist"] == {"projects": 2, "steps": 3, "closed": 0, "comments": 2}, f"send creates a task per project and its next steps: {d.get('todoist')}")
     check(sorted(t["content"] for t in parents) == ["Pipeline Hygiene", "Territory Map"] and all(t["project_id"] == "wp" for t in TODO.values()),
           "projects and their steps go in the Weekly Progress project")
     check(all(t["responsible_uid"] == "u1" for t in TODO.values()), "the sender owns (is assigned) each task and subtask")
     pid = next(t["id"] for t in parents if t["content"] == "Pipeline Hygiene")
     check(sorted(t["content"] for t in TODO.values() if t["parent_id"] == pid) == ["Close out Q4 list", "Merge duplicates"], "next steps are its subtasks")
     s, d = send("Casey Test", w9, [{**two[0], "nextSteps": ["Close out Q4 list", "merge duplicates", "Send to finance"]}, two[1]], use)
-    check(d["todoist"] == {"projects": 2, "steps": 1, "closed": 0} and len([t for t in TODO.values() if not t["parent_id"]]) == 2,
+    check(d["todoist"] == {"projects": 2, "steps": 1, "closed": 0, "comments": 0} and len([t for t in TODO.values() if not t["parent_id"]]) == 2,
           "a resend reuses the project tasks and only adds new steps")
     sub = {t["content"]: t for t in TODO.values() if t["parent_id"] == pid}
     check(d["todoist"]["closed"] == 0, "nothing checked off while all steps are still listed")
@@ -510,6 +523,38 @@ def run():
     s, d = send("Casey Test", w9, two, use)
     check(s == 200 and "todoist" not in d, "not connected: nothing sent to Todoist")
     call("POST", "/api/todoist", {"name": "Casey Test", "token": GOOD_TOKEN})
+
+    print("todoist: last week's next steps, and teammates on one project")
+    COMMENTS.clear()
+    s, d = send("Casey Test", w9, [proj("Pipeline Hygiene", "Claude", "", ["Cleaned"], "1-3 hrs", steps=["Close out Q4 list", "Merge duplicates"])], use)
+    pid = next(t["id"] for t in TODO.values() if not t["parent_id"] and t["content"] == "Pipeline Hygiene" and not t["checked"] and t["added_by_uid"] == "u1")
+    mine_c = [c for c in COMMENTS.values() if c["task_id"] == pid]
+    check(d["todoist"]["comments"] == 1 and len(mine_c) == 1 and "Progress:" in mine_c[0]["content"] and "- Cleaned" in mine_c[0]["content"],
+          "the week's update goes on the project task as a comment")
+    s, d = send("Casey Test", w9, [proj("Pipeline Hygiene", "Claude", "", ["Cleaned", "Deduped"], "1-3 hrs", steps=["Close out Q4 list", "Merge duplicates"])], use)
+    check(d["todoist"]["comments"] == 0 and len([c for c in COMMENTS.values() if c["task_id"] == pid]) == 1
+          and "- Deduped" in next(c for c in COMMENTS.values() if c["task_id"] == pid)["content"], "a resend edits that comment, no second one")
+    step = next(t for t in TODO.values() if t["parent_id"] == pid and t["content"] == "Merge duplicates" and not t["checked"])
+    step["checked"] = True                           # ticked off in Todoist during the week
+    nxt = call("GET", f"/api/mine?name=Casey%20Test&week={w8}")[1]
+    check(nxt["lastWeek"] == w9 and nxt["lastProjects"][0]["nextSteps"] == ["Close out Q4 list", "Merge duplicates"],
+          "next week starts from last week's next steps")
+    check(nxt["todoistDone"] == {"pipeline hygiene": ["merge duplicates"]}, f"steps checked off in Todoist come back as done: {nxt['todoistDone']}")
+    check(call("POST", "/api/todoist", {"name": "Blake Test", "token": TEAM_TOKEN})[0] == 200, "a teammate connects Todoist")
+    tops = len([t for t in TODO.values() if not t["parent_id"]])
+    s, d = send("Blake Test", w9, [proj("pipeline hygiene", "Claude", "", ["Built the dedupe report"], "1-3 hrs", steps=["Share report"])], use)
+    check(s == 200 and len([t for t in TODO.values() if not t["parent_id"]]) == tops, f"a teammate's update on the same project makes no new task: {d.get('todoist')}")
+    blake_c = [c for c in COMMENTS.values() if c["task_id"] == pid and c["posted_uid"] == "u2"]
+    check(len(blake_c) == 1 and "**Blake Test**" in blake_c[0]["content"] and "- Built the dedupe report" in blake_c[0]["content"],
+          "the teammate's update is their own comment on the same task")
+    share = next(t for t in TODO.values() if t["parent_id"] == pid and t["content"] == "Share report")
+    check(share["responsible_uid"] == "u2" and TODO[pid]["responsible_uid"] == "u1" and TODO[pid]["content"] == "Pipeline Hygiene",
+          "the teammate's next step is theirs; the task keeps its owner and name")
+    check(not next(t for t in TODO.values() if t["parent_id"] == pid and t["content"] == "Close out Q4 list" and not t["checked"])["responsible_uid"] == "u2",
+          "the teammate doesn't take over Casey's steps")
+    call("DELETE", f"/api/admin/send?name=Blake%20Test&week={w9}", auth=ADMIN)
+    call("DELETE", "/api/todoist?name=Blake%20Test", auth=ADMIN)
+
     good = GOOD_TOKEN
     globals()["GOOD_TOKEN"] = "c3" * 20          # the token stops working
     s, d = send("Casey Test", w9, two, use)
