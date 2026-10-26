@@ -719,7 +719,11 @@ class Handler(BaseHTTPRequestHandler):
             return True
         except (OSError, ValueError) as exc:
             sys.stderr.write(f"could not read Supabase: {exc}\n")
-            self.send_json(503, {"error": "Couldn't reach the data store. Try again in a minute."})
+            # just the status and Postgres error code (no data), so setup problems can be told apart
+            code = re.search(r"Supabase (\d+)|Couldn't reach", str(exc))
+            pg = re.search(r'"code"\s*:\s*"(\w+)"', str(exc))
+            self.send_json(503, {"error": "Couldn't reach the data store. Try again in a minute.",
+                                 "code": " ".join(x for x in ((code.group(1) or "unreachable") if code else "other", pg.group(1) if pg else "") if x)})
             return False
 
     # GET ------------------------------------------------------------
