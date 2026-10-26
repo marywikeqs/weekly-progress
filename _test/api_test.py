@@ -347,6 +347,21 @@ def run():
     s, d = call("POST", "/api/admin/test-email", {}, auth=ADMIN)
     check(s == 200 and SENT[-1]["subject"].startswith("[Test]"), "admin test send")
     check(call("POST", "/api/admin/test-email", {})[0] == 401, "team can't send test emails")
+    # last week: Casey and Drew haven't sent; once they're not needed, the email goes without them
+    check(not [m for m in SENT if report_week_label(w0) in m["subject"]], "no email for last week while Casey and Drew are out")
+    roster = call("GET", "/api/admin", auth=ADMIN)[1]["config"]["roster"]
+    full = call("GET", "/api/admin", auth=ADMIN)[1]["config"]
+    s, d = call("PUT", "/api/admin/config", {**full, "roster": [{**p, "required": p["name"] not in ("Casey Test", "Drew Test")} for p in roster]}, auth=ADMIN)
+    check(s == 200 and [p["required"] for p in d["config"]["roster"]] == [p["name"] not in ("Casey Test", "Drew Test") for p in roster], "Needed for the email saves per person")
+    time.sleep(0.8)
+    got = [m for m in SENT if report_week_label(w0) in m["subject"]]
+    check(len(got) == 1 and "missing Casey Test, Drew Test" in got[0]["subject"], "email goes once only optional people are out: " + (got[0]["subject"] if got else "none"))
+    s, html0 = call("GET", f"/report?week={w0}", auth=ADMIN, raw=True)
+    check("hasn't sent yet · optional" in html0.decode(), "report marks the optional people")
+    s, emb = call("GET", f"/report?week={w0}&embed=1", auth=ADMIN, raw=True)
+    check(s == 200 and "aside{display:none}" in emb.decode() and "aside{display:none}" not in html0.decode(), "embedded digest for the admin page drops the sidebar")
+    s, d = call("PUT", "/api/admin/config", {**full, "roster": [{**p, "required": True} for p in roster]}, auth=ADMIN)
+    check(s == 200, "everyone needed again")
 
     print("screenshots")
     check(call("GET", f"/screenshots/{shot}", raw=True)[0] == 401, "team can't open screenshots")

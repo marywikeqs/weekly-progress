@@ -19,7 +19,7 @@ aside{background:var(--side);border-right:1px solid var(--line);padding:20px 12p
 aside a{display:block;padding:6px 8px;border-radius:5px;color:var(--ink);text-decoration:none}
 aside a:hover{background:var(--hover)}
 aside .sep{border-top:1px solid var(--line);margin:10px 0}
-main{padding:32px 32px 110px;max-width:820px;width:100%}
+main{padding:32px 32px 110px;max-width:1040px;width:100%}
 h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
 h2{font-size:15px;margin:34px 0 0;padding-bottom:6px;border-bottom:1px solid var(--line);scroll-margin-top:16px}
 .hint{font-size:12.5px;color:var(--muted);margin:8px 0 4px}
@@ -52,6 +52,11 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
 .sentlist{font-size:13px;color:var(--muted);margin:6px 0 0;padding-left:18px}
 .bar{position:fixed;left:240px;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding:12px 32px;display:flex;gap:12px;align-items:center}
 .bar .status{flex:1;font-size:13px;color:var(--muted)}.bar .status.err{color:var(--p1)}.bar .status.ok{color:var(--done)}
+.digest-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.digest-bar select{font-size:13.5px;padding:6px 8px;color:var(--ink)}
+.digest-bar .live{flex:1;min-width:200px;font-size:12.5px;color:var(--muted)}
+.digest-bar .live b{color:var(--done);font-weight:600}
+#digest-frame{display:block;width:100%;height:600px;border:0;margin-top:12px}
 [hidden]{display:none!important}
 @media (max-width:760px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .app{margin:0 10px 0 4px;width:100%}aside .sep{display:none}main{padding:20px 16px 110px}.bar{left:0;padding:12px 16px}.item{flex-wrap:wrap}}
@@ -64,7 +69,7 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <a href="/report">Weekly report</a>
   <a href="/">The form</a>
   <div class="sep"></div>
-  <a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#todoist">Todoist</a><a href="#sends">Sends</a>
+  <a href="#digest">Digest</a><a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#todoist">Todoist</a><a href="#sends">Sends</a>
   <div class="sep"></div>
   <a href="/export/updates.csv">All project updates (CSV)</a><a href="/export/tasks.csv">All other work (CSV)</a><a href="/export/usage.csv">All usage (CSV)</a>
 </aside>
@@ -72,13 +77,24 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <h1>Admin</h1>
   <p class="sub">Changes apply to the form as soon as you save.</p>
 
+  <h2 id="digest">Digest</h2>
+  <p class="hint">Everything sent for the week, by person, the same as the emailed report. It updates on its own as people send, so you can keep this open and review it with leadership.</p>
+  <div class="digest-bar">
+    <select id="digest-week" aria-label="Week"></select>
+    <span class="live" id="digest-live"></span>
+    <button class="ghost" type="button" id="digest-refresh">Refresh</button>
+    <button class="ghost" type="button" id="digest-print">Print / Save as PDF</button>
+    <button class="ghost" type="button" id="digest-open">Open full screen</button>
+  </div>
+  <iframe id="digest-frame" title="Weekly digest"></iframe>
+
   <h2 id="roster">Roster</h2>
-  <p class="hint">Everyone who reports each week. Untick Active for someone who has left: they drop off the form and out of the report's counts, and their past updates stay.</p>
+  <p class="hint">Everyone who reports each week. Untick Active for someone who has left: they drop off the form and out of the report's counts, and their past updates stay. Untick Needed for the email for someone the report email shouldn't wait on (an intern, say): they still use the form and show in the report when they send.</p>
   <div id="roster-list"></div>
   <button class="add" id="add-person"><span>+</span>Add person</button>
 
   <h2 id="email">Report email</h2>
-  <p class="hint">The report is emailed once a week: as soon as everyone on the roster has sent their update. Changes sent after that don't send it again. Separate several addresses with commas.</p>
+  <p class="hint">The report is emailed once a week: as soon as everyone on the roster who's needed for the email has sent their update. Changes sent after that don't send it again. Separate several addresses with commas.</p>
   <div class="emailrow"><input type="email" id="report-email" multiple placeholder="name@quiltsoftware.com" aria-label="Email the report to">
     <button class="ghost" id="test-email" type="button">Send a test email</button></div>
   <div class="status-line" id="email-status"></div>
@@ -127,7 +143,7 @@ async function load() {
   state = d.config; learned = d.learned; email = d.email;
   $('howto-text').value = state.screenshotInstructions || '';
   $('report-email').value = state.reportEmail || '';
-  render(); renderEmail(); renderSends(d.sends || []); renderTodoist(d.todoist || {});
+  render(); renderEmail(); renderSends(d.sends || []); renderTodoist(d.todoist || {}); renderDigest(d);
   if (!d.writable) setStatus('The server can\'t save: its storage isn\'t writable', 'err');
   else if (!d.persistent) setStatus('No volume attached: everything resets on the next deploy', 'err');
   else setStatus('All changes saved');
@@ -146,6 +162,7 @@ function renderEmail() {
 function render() {
   $('roster-list').innerHTML = state.roster.map((p, i) => `<div class="item${p.active ? '' : ' off'}"><span class="ring"></span>
     <input type="text" value="${esc(p.name)}" data-r="${i}" aria-label="Name" placeholder="Full name">
+    <label><input type="checkbox" data-rq="${i}"${p.required !== false ? ' checked' : ''}> Needed for the email</label>
     <label><input type="checkbox" data-ra="${i}"${p.active ? ' checked' : ''}> Active</label>
     <button class="x" data-rx="${i}" title="Remove from the list" aria-label="Remove">×</button></div>`).join('');
   $('project-list').innerHTML = state.projects.map((p, i) => `<div class="item${p.active ? '' : ' off'}"><span class="ring"></span>
@@ -166,6 +183,7 @@ function render() {
 
   document.querySelectorAll('[data-r]').forEach(el => el.oninput = () => { state.roster[el.dataset.r].name = el.value; touch(); });
   document.querySelectorAll('[data-ra]').forEach(el => el.onchange = () => { state.roster[el.dataset.ra].active = el.checked; touch(); render(); });
+  document.querySelectorAll('[data-rq]').forEach(el => el.onchange = () => { state.roster[el.dataset.rq].required = el.checked; touch(); });
   document.querySelectorAll('[data-rx]').forEach(el => el.onclick = () => { state.roster.splice(+el.dataset.rx, 1); touch(); render(); });
   document.querySelectorAll('[data-p]').forEach(el => el.oninput = () => { state.projects[el.dataset.p].name = el.value; touch(); });
   document.querySelectorAll('[data-pt]').forEach(el => el.onchange = () => { state.projects[el.dataset.pt].type = el.value; touch(); });
@@ -178,7 +196,7 @@ function render() {
   });
 }
 
-$('add-person').onclick = () => { state.roster.push({name: '', active: true}); render(); const ins = $('roster-list').querySelectorAll('input[type=text]'); ins[ins.length - 1].focus(); };
+$('add-person').onclick = () => { state.roster.push({name: '', active: true, required: true}); render(); const ins = $('roster-list').querySelectorAll('input[type=text]'); ins[ins.length - 1].focus(); };
 $('add-project').onclick = () => { state.projects.push({name: '', type: '', active: true}); render(); const ins = $('project-list').querySelectorAll('input[type=text]'); ins[ins.length - 1].focus(); };
 $('add-cat').onclick = () => { state.taskCategories.push(''); render(); const ins = $('cat-list').querySelectorAll('input[type=text]'); ins[ins.length - 1].focus(); };
 function renderSends(sends) {
@@ -230,6 +248,41 @@ function renderTodoist(linked) {
   });
   document.querySelectorAll('[data-toff]').forEach(b => b.onclick = () => call(b.dataset.toff, 'DELETE'));
 }
+// ---- Digest: the week's report, kept current as people send ----
+let digestStamp = null;
+const weekStamp = (sends, week) => sends.filter(x => x.week === week).map(x => x.name + x.at).sort().join('|');
+function renderDigest(d) {
+  const sel = $('digest-week'), keep = sel.value;
+  sel.innerHTML = (d.weeks || []).map(w => `<option value="${w}">Week ending ${esc(fmtWeek(w))}</option>`).join('');
+  sel.value = keep && d.weeks.includes(keep) ? keep : (d.defaultWeek || d.weeks[0] || '');
+  loadDigest(d.sends || []);
+}
+function loadDigest(sends) {
+  const w = $('digest-week').value;
+  digestStamp = weekStamp(sends, w);
+  $('digest-frame').src = `/report?week=${w}&embed=1`;
+  const n = new Set(sends.filter(x => x.week === w).map(x => x.name)).size;
+  $('digest-live').innerHTML = `<b>●</b> Live · ${n} ${n === 1 ? 'person has' : 'people have'} sent · checked ${esc(new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}))}`;
+}
+async function checkDigest(force) {
+  try {
+    const d = await (await fetch('/api/admin')).json();
+    const w = $('digest-week').value;
+    if (force || weekStamp(d.sends || [], w) !== digestStamp) { loadDigest(d.sends || []); renderSends(d.sends || []); }
+    else $('digest-live').innerHTML = $('digest-live').innerHTML.replace(/checked .*$/, 'checked ' + esc(new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})));
+  } catch (e) { $('digest-live').textContent = "Couldn't check for new sends: " + e.message; }
+}
+$('digest-frame').onload = () => {      // grow to fit, so the page scrolls rather than the frame
+  const f = $('digest-frame');
+  try { f.style.height = f.contentDocument.documentElement.scrollHeight + 'px'; } catch (e) {}
+};
+$('digest-week').onchange = () => checkDigest(true);
+$('digest-refresh').onclick = () => checkDigest(true);
+$('digest-print').onclick = () => $('digest-frame').contentWindow.print();
+$('digest-open').onclick = () => open(`/report?week=${$('digest-week').value}`, '_blank');
+setInterval(() => { if (!document.hidden) checkDigest(false); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDigest(false); });
+
 $('howto-text').oninput = () => { state.screenshotInstructions = $('howto-text').value; touch(); };
 $('report-email').oninput = () => { state.reportEmail = $('report-email').value; touch(); };
 $('save').onclick = async () => {

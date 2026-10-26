@@ -127,7 +127,10 @@ def build(data: dict, week: str) -> dict:
         "roster": len(roster),
         "complete": sorted(n for n in roster if n in did_proj and n in did_use),
         "missing": sorted(n for n in roster if n not in did_proj or n not in did_use),
+        # people the email doesn't wait for (e.g. an intern); they still count once they send
+        "optional": sorted(p["name"] for p in data["config"]["roster"] if p["active"] and not p.get("required", True)),
     }
+    participation["waitingOn"] = [n for n in participation["missing"] if n not in participation["optional"]]
     # late = first sent after the deadline (later edits don't count)
     due = deadline(week)
     participation["deadline"] = f"Fri, {due.astimezone(timezone(_eastern_offset(date.fromisoformat(week)))):%b} {date.fromisoformat(week).day}, 11 PM ET"
@@ -404,14 +407,18 @@ def _wow(now, before, has_prev, fmt=lambda v: f"{v:g}") -> str:
         return "same as last week"
     return f"{'▲' if d > 0 else '▼'} {fmt(abs(d))} vs last week"
 
+# inside the admin page's Digest: no sidebar (the admin page has the week picker and buttons)
+EMBED_STYLE = "aside{display:none}.layout{display:block;min-height:0}main{padding:4px 0 24px;max-width:none}body{background:transparent}"
+EMBED_BASE = '<base target="_blank">'      # screenshots and CSVs open in a new tab, not inside the frame
 
-def render_html(r: dict, weeks: list) -> str:
+
+def render_html(r: dict, weeks: list, embed: bool = False) -> str:
     c, l, p, hp = r["cur"], r["last"], r["participation"], r["hasPrev"]
     wk = r["week"]
     pc = person_colours(set(p["complete"]) | set(p["missing"]) | {pp["name"] for pp in r["people"]} | {u["name"] for u in r["spend"]})
     opts = "".join(f'<option value="{w}"{" selected" if w == wk else ""}>Week ending {escape(nice_date(w))}</option>' for w in weeks)
     o = [f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="data:,"><title>Weekly Progress Report</title><style>{STYLE}</style></head><body><div class="layout">
+<link rel="icon" href="data:,"><title>Weekly Progress Report</title><style>{STYLE}{EMBED_STYLE if embed else ""}</style>{EMBED_BASE if embed else ""}</head><body><div class="layout">
 <aside><div class="app"><i>✓</i>Weekly Progress</div>
 <form method="get" action="/report"><select name="week" onchange="this.form.submit()" aria-label="Week">{opts}</select></form>
 <nav><a href="#people" style="--c:{GREEN}"><i></i><em>Participation</em><span>{len(p['complete'])}/{p['roster']}</span></a>
@@ -442,8 +449,8 @@ def render_html(r: dict, weeks: list) -> str:
                  + (f'<div class="late">Late: sent {escape(late[n])}</div>' if n in late else "")
                  + '</div><span class="ring sent" title="Sent"></span></div>')
     for n in p["missing"]:
-        o.append(f'<div class="row missing">{_av(n, pc[n], "sm off")}<div class="body">{escape(n)} <span class="label">hasn\'t sent yet</span>'
-                 + ('<div class="late">Past the deadline</div>' if p["overdue"] else "") + "</div></div>")
+        o.append(f'<div class="row missing">{_av(n, pc[n], "sm off")}<div class="body">{escape(n)} <span class="label">hasn\'t sent yet{" · optional" if n in p["optional"] else ""}</span>'
+                 + ('<div class="late">Past the deadline</div>' if p["overdue"] and n not in p["optional"] else "") + "</div></div>")
     o.append("</div>")
     o.append(f'<p class="note">Due {escape(p["deadline"])}. '
              + ("Everyone is in" + (", on time." if not p["late"] else f'; {len(p["late"])} missed the deadline.') if not p["missing"] else "") + "</p>")

@@ -363,7 +363,7 @@ def clean_config(d: dict) -> dict | str:
         n = re.sub(r"\s+", " ", str(p.get("name", ""))).strip()[:80]
         if n and n.lower() not in seen:
             seen.add(n.lower())
-            roster.append({"name": n, "active": bool(p.get("active", True))})
+            roster.append({"name": n, "active": bool(p.get("active", True)), "required": bool(p.get("required", True))})
     projects, seen = [], set()
     for p in d.get("projects") or []:
         n = re.sub(r"\s+", " ", str(p.get("name", ""))).strip()[:120]
@@ -411,7 +411,8 @@ def due_emails() -> list:
         return out
     for w in weeks_to_check():
         r = report.build(DATA, w)
-        if not r["participation"]["missing"]:      # only once everyone is in
+        p = r["participation"]
+        if p["complete"] and not p["waitingOn"]:      # only once everyone the email waits for is in
             out.append((w, r, "everyone"))
     return out
 
@@ -663,7 +664,7 @@ class Handler(BaseHTTPRequestHandler):
                 sends = sorted(sends.values(), key=lambda o: (o["week"], o["at"]), reverse=True)
                 return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()), "email": email, "sends": sends,
                                             "todoist": {p["name"]: p["name"] in DATA["todoist"]["tokens"] for p in DATA["config"]["roster"]},
-                                            "weeks": report.weeks_with_data(DATA), "writable": WRITABLE, "persistent": state_persistent()})
+                                            "weeks": report.weeks_with_data(DATA), "defaultWeek": report.default_week(DATA), "writable": WRITABLE, "persistent": state_persistent()})
         if path in ("/report", "/report.txt"):
             if not self.gate("admin"):
                 return
@@ -672,7 +673,7 @@ class Handler(BaseHTTPRequestHandler):
                 r = report.build(DATA, week)
             if path == "/report.txt":
                 return self.send_body(200, report.render_text(r, self.base_url()).encode("utf-8"), "text/plain; charset=utf-8")
-            return self.send_body(200, report.render_html(r, report.weeks_with_data(DATA, week)).encode("utf-8"), "text/html; charset=utf-8")
+            return self.send_body(200, report.render_html(r, report.weeks_with_data(DATA, week), embed=q.get("embed") == "1").encode("utf-8"), "text/html; charset=utf-8")
         m = re.fullmatch(r"/screenshots/([^/]+)", path)
         if m:
             if not self.gate("admin"):
@@ -973,6 +974,7 @@ class Handler(BaseHTTPRequestHandler):
                 DATA["config"] = before
                 return self.unsaved()
             log_change("update", "config", before, cfg)
+        MAIL_KICK.set()       # someone no longer needed for the email? it may be able to go now
         self.send_json(200, {"config": cfg})
 
 
