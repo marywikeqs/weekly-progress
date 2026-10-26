@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "{server.py,report.py,mailer.py,todoist.py,index.html,admin.html,data/**}",
+      "maxDuration": 60
+    }
+  },
+  "crons": [{ "path": "/api/cron/mail", "schedule": "0 * * * *" }]
+}

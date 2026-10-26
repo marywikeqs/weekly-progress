@@ -36,3 +36,21 @@ On the volume: `config.json`, `updates.json`, `tasks.json`, `usage.json`, `sent.
 ## Not built yet
 
 - Posting the report to Slack, and reminders for people who haven't sent. `report.build()` and `report.render_text()` are separate from the web page so either can reuse them.
+
+## Vercel
+
+`vercel.json` sends every request to `api/index.py`, which runs the same
+`Handler` as `server.py`. `public/` is empty on purpose: pages are served by the
+function (behind the passwords), never as open static files. On Vercel the
+site stays closed until both `APP_PASSWORD` and `ADMIN_PASSWORD` are set.
+
+Data lives in Upstash Redis (Vercel → Storage → Upstash for Redis, connected to
+the project; it sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`). The report
+email is checked after every send and by an hourly Vercel cron
+(`/api/cron/mail`, needs `CRON_SECRET`). Also set `RESEND_API_KEY` and
+`PUBLIC_URL` (the Vercel address, for the email's links).
+
+Moving data in: download `/api/admin/backup` from the old host, then
+`python _test/import_backup.py backup.json` with the two KV variables set.
+Tests against Redis: run `_test/api_test.py` with `KV_REST_API_URL`,
+`KV_REST_API_TOKEN` and `VERCEL=1` pointing at a stand-in Upstash.
