@@ -96,8 +96,22 @@ MAX_SHOT = 8 * 1024 * 1024          # the page shrinks big screenshots before se
 SHOT_RX = re.compile(r"^[a-f0-9]{20}\.(png|jpg|webp)$")
 LOCK = threading.Lock()
 TODOIST_LOCKS: dict = {}      # one Todoist sync at a time per person, so two quick sends can't both create a task
-KV_URL = (os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL") or "").rstrip("/")
-KV_TOKEN = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN") or ""
+
+
+def _env_ending(*suffixes: str) -> str:
+    """An env var by name, or by its ending: Vercel can put a prefix on storage variables (STORAGE_KV_REST_API_URL)."""
+    for s in suffixes:
+        if os.environ.get(s):
+            return os.environ[s]
+    for s in suffixes:
+        for k, v in sorted(os.environ.items()):
+            if k.endswith("_" + s) and v and "READ_ONLY" not in k:
+                return v
+    return ""
+
+
+KV_URL = _env_ending("KV_REST_API_URL", "UPSTASH_REDIS_REST_URL").rstrip("/")
+KV_TOKEN = _env_ending("KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_TOKEN")
 ON_VERCEL = bool(os.environ.get("VERCEL"))
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist")
@@ -730,7 +744,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def fresh(self) -> bool:
         """With Redis, read the latest data first (other copies of the app may have saved)."""
-        if not KV_URL or urlsplit(self.path).path in ("/", "/index.html", "/admin", "/admin.html"):
+        if urlsplit(self.path).path in ("/", "/index.html", "/admin", "/admin.html", "/healthz"):
+            return True
+        if ON_VERCEL and not KV_URL:        # no disk there to fall back on
+            self.send_json(503, {"error": "Storage isn't connected. In Vercel: Storage → Upstash for Redis → connect it to this project, then redeploy."})
+            return False
+        if not KV_URL:
             return True
         try:
             with LOCK:
