@@ -56,7 +56,7 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
 .digest-bar select{font-size:13.5px;padding:6px 8px;color:var(--ink)}
 .digest-bar .live{flex:1;min-width:200px;font-size:12.5px;color:var(--muted)}
 .digest-bar .live b{color:var(--done);font-weight:600}
-#digest-frame{display:block;width:100%;height:600px;border:0;margin-top:12px}
+#digest-frame,#proj-frame{display:block;width:100%;height:600px;border:0;margin-top:12px}
 [hidden]{display:none!important}
 @media (max-width:760px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .app{margin:0 10px 0 4px;width:100%}aside .sep{display:none}main{padding:20px 16px 110px}.bar{left:0;padding:12px 16px}.item{flex-wrap:wrap}}
@@ -67,9 +67,10 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
 <aside>
   <div class="app"><i>✓</i>Weekly Progress</div>
   <a href="/report">Weekly report</a>
+  <a href="/projects">Projects over time</a>
   <a href="/">The form</a>
   <div class="sep"></div>
-  <a href="#digest">Digest</a><a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#todoist">Todoist</a><a href="#sends">Sends</a>
+  <a href="#digest">Digest</a><a href="#projects-over-time">Projects over time</a><a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#todoist">Todoist</a><a href="#sends">Sends</a>
   <div class="sep"></div>
   <a href="/export/updates.csv">All project updates (CSV)</a><a href="/export/tasks.csv">All other work (CSV)</a><a href="/export/usage.csv">All usage (CSV)</a>
 </aside>
@@ -87,6 +88,15 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
     <button class="ghost" type="button" id="digest-open">Open full screen</button>
   </div>
   <iframe id="digest-frame" title="Weekly digest"></iframe>
+
+  <h2 id="projects-over-time">Projects over time</h2>
+  <p class="hint">Every project across all weeks: who's on it, each week's progress and next steps, and how Time left has moved. Slipping = the time left got longer since the last update; gone quiet = nobody updated it in the latest week (finished, paused or forgotten).</p>
+  <div class="digest-bar">
+    <span class="live">Updates along with the digest.</span>
+    <button class="ghost" type="button" id="proj-print">Print / Save as PDF</button>
+    <button class="ghost" type="button" id="proj-open">Open full screen</button>
+  </div>
+  <iframe id="proj-frame" title="Projects over time"></iframe>
 
   <h2 id="roster">Roster</h2>
   <p class="hint">Everyone who reports each week. Untick Active for someone who has left: they drop off the form and out of the report's counts, and their past updates stay. Untick Needed for the email for someone the report email shouldn't wait on (an intern, say): they still use the form and show in the report when they send.</p>
@@ -261,6 +271,7 @@ function loadDigest(sends) {
   const w = $('digest-week').value;
   digestStamp = weekStamp(sends, w);
   $('digest-frame').src = `/report?week=${w}&embed=1`;
+  $('proj-frame').src = '/projects?embed=1';
   const n = new Set(sends.filter(x => x.week === w).map(x => x.name)).size;
   $('digest-live').innerHTML = `<b>●</b> Live · ${n} ${n === 1 ? 'person has' : 'people have'} sent · checked ${esc(new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}))}`;
 }
@@ -276,6 +287,15 @@ $('digest-frame').onload = () => {      // grow to fit, so the page scrolls rath
   const f = $('digest-frame');
   try { f.style.height = f.contentDocument.documentElement.scrollHeight + 'px'; } catch (e) {}
 };
+$('proj-frame').onload = () => {
+  const f = $('proj-frame');
+  try { f.style.height = f.contentDocument.documentElement.scrollHeight + 'px'; } catch (e) {}
+};
+addEventListener('message', e => {      // the projects page grows and shrinks as filters and weeks open
+  if (e.origin === location.origin && e.data && e.data.wpHeight) $('proj-frame').style.height = e.data.wpHeight + 'px';
+});
+$('proj-print').onclick = () => $('proj-frame').contentWindow.print();
+$('proj-open').onclick = () => open('/projects', '_blank');
 $('digest-week').onchange = () => checkDigest(true);
 $('digest-refresh').onclick = () => checkDigest(true);
 $('digest-print').onclick = () => $('digest-frame').contentWindow.print();

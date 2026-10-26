@@ -416,6 +416,22 @@ def run():
     check("Avery Test: Commission Audit Tool — Fixed the rounding on accelerators (Claude)" in t1.decode(), "Slack text has tweaks")
     check('id="glance"' in html and html.index('id="glance"') < html.index('id="digest"'), "At a glance comes before the full breakdown")
     check("Gone Test" not in html and "Everyone is in" in html, "everyone in; inactive people not counted")
+    s, ph = call("GET", "/projects", auth=ADMIN, raw=True)
+    ph = ph.decode()
+    check(s == 200 and ph.count('class="proj ') == len({u["project"].lower() for w in (w0, w1) for u in call("GET", f"/api/mine?name=Avery%20Test&week={w}")[1]["updates"]} | {"board deck automation", "territory map", "commission audit tool"}),
+          "projects over time: one card per project across weeks")
+    check("Commission Audit Tool" in ph and "Week by week" in ph and "Since " in ph, "projects page shows each project's timeline")
+    check(call("GET", "/projects")[0] == 401, "projects page is admin only")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import report as rp
+    fake = {"updates": [{"name": "A", "week": "2026-10-09", "project": "X", "type": "Claude", "timeLeft": "1–2 weeks"},
+                        {"name": "A", "week": "2026-10-16", "project": "x", "type": "Claude", "timeLeft": "1–3 months"},
+                        {"name": "B", "week": "2026-10-16", "project": "Y", "type": "Non-Claude", "timeLeft": "3–5 days"},
+                        {"name": "B", "week": "2026-10-09", "project": "Z", "type": "Non-Claude", "timeLeft": "1–2 days"}]}
+    pj = {x["project"]: x for x in rp.projects(fake)["projects"]}
+    check(pj["x"]["trend"] == "slipping" and pj["x"]["trail"] == ["1–2 weeks", "1–3 months"] and pj["x"]["weeks"] == 2,
+          "same project across weeks (any case) joins up; longer time left = slipping")
+    check(pj["Z"]["quietFor"] == 1 and pj["Y"]["quietFor"] == 0 and pj["Y"]["trend"] == "", "gone quiet = no update in the latest week")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
     check("⚑" in html, "over-80% flag shown (Avery 86%)")
     check("+$130" in html, "weekly spend change (430 − 300)")

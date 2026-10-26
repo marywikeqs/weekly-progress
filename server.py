@@ -857,6 +857,12 @@ class Handler(BaseHTTPRequestHandler):
             out["screenshots"] = {f: base64.b64encode(b).decode("ascii") for f in sorted(names) if (b := read_shot(f))}
             return self.send_body(200, json.dumps(out, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8",
                                   {"Content-Disposition": f'attachment; filename="weekly-progress-{date.today()}.json"'})
+        if path == "/projects":       # every project across all weeks, and how it's moving
+            if not self.gate("admin"):
+                return
+            with LOCK:
+                p = report.projects(DATA)
+            return self.send_body(200, report.render_projects(p, embed=q.get("embed") == "1").encode("utf-8"), "text/html; charset=utf-8")
         if path in ("/report", "/report.txt"):
             if not self.gate("admin"):
                 return

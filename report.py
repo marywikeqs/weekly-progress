@@ -570,3 +570,151 @@ async function copySlack(){{const t=document.getElementById('toast');try{{const 
 await navigator.clipboard.writeText(await r.text());t.textContent='Slack summary copied';}}catch(e){{t.textContent='Couldn\\'t copy: '+e.message;}}
 t.style.display='block';setTimeout(()=>t.style.display='none',2500);}}</script></body></html>""")
     return "".join(o)
+
+
+# ---------------- projects over time ----------------
+
+# how far off each "Time left" answer is, to tell moving from slipping; Ongoing has no end, so no trend
+_TL_RANK = {t: i for i, t in enumerate(TIME_LEFT[:-1])}
+
+
+def projects(data: dict) -> dict:
+    """Every project across all weeks: who, each week's updates, how Time left has moved, and whether it's gone quiet."""
+    cur = current_week()
+    ups = [u for u in data["updates"] if u["week"] <= cur]
+    latest = max((u["week"] for u in ups), default=cur)      # the newest week anyone sent
+    groups: dict = {}
+    for u in sorted(ups, key=lambda u: (u["week"], u.get("submittedAt") or "")):
+        groups.setdefault(u["project"].lower(), []).append(u)
+    out = []
+    for rows in groups.values():
+        last = rows[-1]
+        weeks = sorted({u["week"] for u in rows}, reverse=True)
+        # per week, the soonest finish anyone gave (Ongoing doesn't count)
+        soonest = {}
+        for w in weeks:
+            ranks = [_TL_RANK[u["timeLeft"]] for u in rows if u["week"] == w and u.get("timeLeft") in _TL_RANK]
+            if ranks:
+                soonest[w] = min(ranks)
+        trail = [TIME_LEFT[soonest[w]] for w in sorted(soonest)]
+        trend = ""
+        if len(soonest) >= 2:
+            now_r, before_r = soonest[max(soonest)], soonest[sorted(soonest)[-2]]
+            trend = "slipping" if now_r > before_r else "moving" if now_r < before_r else "steady"
+        gap = (date.fromisoformat(latest) - date.fromisoformat(weeks[0])).days // 7
+        out.append({
+            "project": last["project"], "type": last["type"],
+            "people": sorted({u["name"] for u in rows}),
+            "first": weeks[-1], "last": weeks[0], "weeks": len(weeks),
+            "quietFor": gap,                         # weeks since its last update (0 = updated in the latest week)
+            "trend": trend, "trail": [t for i, t in enumerate(trail) if i == 0 or t != trail[i - 1]],
+            "timeline": [{"week": w, "entries": sorted((u for u in rows if u["week"] == w), key=lambda u: u["name"])}
+                         for w in weeks],
+        })
+    order = {"slipping": 0, "moving": 1, "steady": 2, "": 3}
+    out.sort(key=lambda p: (p["quietFor"] > 0, order[p["trend"]], p["project"].lower()))
+    active = [p for p in out if not p["quietFor"]]
+    return {"latest": latest, "projects": out,
+            "counts": {"active": len(active), "new": sum(p["first"] == latest for p in out),
+                       "slipping": sum(p["trend"] == "slipping" for p in active),
+                       "quiet": sum(p["quietFor"] > 0 for p in out)}}
+
+
+PROJECTS_STYLE = """
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0 4px}
+.filters button{font:inherit;font-size:12.5px;padding:4px 12px;border-radius:999px;border:1px solid var(--edge);background:var(--bg);color:var(--muted);cursor:pointer}
+.filters button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+.filters select{font:inherit;font-size:12.5px;padding:4px 8px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink)}
+.proj{border:1px solid var(--edge);border-left:4px solid var(--c);border-radius:10px;padding:14px 16px 6px;margin-top:14px;background:var(--bg)}
+.proj.quiet{opacity:.75}
+.proj-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.proj-head h3{margin:0;font-size:16px}
+.proj-meta{font-size:12.5px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
+.proj-meta .avs{display:inline-flex;gap:3px}
+.trail{font-size:12.5px;margin-top:6px;color:var(--muted)}
+.trail b{color:var(--ink);font-weight:600}
+.flag{font-size:12px;font-weight:600}
+.flag.slipping{color:var(--p1)}.flag.moving{color:var(--done)}.flag.steady{color:var(--muted)}.flag.quiet{color:var(--p2)}
+details.tl{margin-top:8px;border-top:1px solid var(--line)}
+details.tl summary{cursor:pointer;font-size:12.5px;color:var(--muted);padding:8px 0;list-style:none}
+details.tl summary::-webkit-details-marker{display:none}
+details.tl summary::before{content:"▸ ";color:var(--faint)}details.tl[open] summary::before{content:"▾ "}
+.wk{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:8px 0;border-top:1px dashed var(--line)}
+.wk-date{font-size:12px;font-weight:600;color:var(--muted)}
+.wk-who{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:600;margin-bottom:2px}
+.wk-entry+.wk-entry{margin-top:10px}
+@media (max-width:760px){.wk{grid-template-columns:1fr;gap:2px}}
+@media print{details.tl{display:block}details.tl>*{display:block}.filters{display:none}.proj{break-inside:avoid}}
+"""
+
+
+def _weeks(n: int) -> str:
+    return f"{n} week{'s' if n != 1 else ''}"
+
+
+def render_projects(p: dict, embed: bool = False) -> str:
+    c = p["counts"]
+    people = sorted({n for x in p["projects"] for n in x["people"]})
+    pc = person_colours(people)
+    o = [f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,"><title>Weekly Progress Projects</title><style>{STYLE}{PROJECTS_STYLE}{EMBED_STYLE if embed else ""}</style>{EMBED_BASE if embed else ""}</head><body><div class="layout">
+<aside><div class="app"><i>✓</i>Weekly Progress</div>
+<nav>{"".join(f'<a href="#pr-{i}" style="--c:{ACCENT if x["type"] == "Claude" else TEAL}"><i></i><em>{escape(x["project"])}</em><span>{x["weeks"]}w</span></a>' for i, x in enumerate(p["projects"]))}</nav>
+<div class="actions"><button type="button" onclick="print()">Print / Save as PDF</button><a href="/report">Weekly report</a><a href="/export/updates.csv">Projects CSV</a><a href="/admin">Admin</a></div></aside>
+<main><h1>Projects</h1><p class="sub">Every project across all weeks, and how it's moving. Latest week: ending {escape(nice_date(p["latest"]))}.</p>
+<div class="stats">{_stat(str(c["active"]), "active projects", "updated in the latest week", BLUE)}{_stat(str(c["new"]), "new", "started in the latest week", GREEN)}{_stat(str(c["slipping"]), "slipping", "time left got longer", ACCENT)}{_stat(str(c["quiet"]), "gone quiet", "no update in the latest week", ORANGE)}</div>
+<div class="filters" role="group" aria-label="Show">
+<button type="button" data-f="all" aria-pressed="true">All</button><button type="button" data-f="active" aria-pressed="false">Active</button>
+<button type="button" data-f="slipping" aria-pressed="false">Slipping</button><button type="button" data-f="quiet" aria-pressed="false">Gone quiet</button>
+<select id="who" aria-label="Person"><option value="">Everyone</option>{"".join(f'<option>{escape(n)}</option>' for n in people)}</select></div>"""]
+    if not p["projects"]:
+        o.append('<p class="empty">No projects sent yet.</p>')
+    for i, x in enumerate(p["projects"]):
+        status = "quiet" if x["quietFor"] else "active"
+        if x["quietFor"]:
+            flag = f'<span class="flag quiet">No update for {_weeks(x["quietFor"])}</span>'
+        else:
+            flag = {"slipping": '<span class="flag slipping">▲ Slipping: time left got longer</span>',
+                    "moving": '<span class="flag moving">▼ Moving: time left got shorter</span>',
+                    "steady": '<span class="flag steady">Same time left as last update</span>', "": ""}[x["trend"]]
+        new = x["first"] == p["latest"]
+        o.append(f'<section class="proj {status}" id="pr-{i}" style="--c:{ACCENT if x["type"] == "Claude" else TEAL}" '
+                 f'data-status="{status}" data-trend="{x["trend"]}" data-people="{escape("|".join(x["people"]))}">'
+                 f'<div class="proj-head"><h3>{escape(x["project"])}</h3>{_label(x["type"])}'
+                 + (_pill("New this week", GREEN) if new else "") + flag + "</div>"
+                 f'<div class="proj-meta"><span class="avs">{"".join(_av(n, pc[n], "sm") for n in x["people"])}</span>'
+                 f'<span>{escape(", ".join(x["people"]))}</span><span>Since {escape(nice_date(x["first"]))}</span>'
+                 f'<span>{_weeks(x["weeks"])} of updates</span></div>')
+        if x["trail"]:
+            o.append('<div class="trail">Time left: ' + " → ".join(f"<b>{escape(t)}</b>" for t in x["trail"]) + "</div>")
+        o.append(f'<details class="tl"{" open" if not x["quietFor"] else ""}><summary>Week by week</summary>')
+        for wk in x["timeline"]:
+            o.append(f'<div class="wk"><div class="wk-date">{escape(nice_date(wk["week"])[:-6])}</div><div>')
+            for u in wk["entries"]:
+                o.append(f'<div class="wk-entry"><div class="wk-who">{_av(u["name"], pc[u["name"]], "sm")}{escape(u["name"])}'
+                         + (f' <span class="tleft">⏳ {escape(time_left(u["timeLeft"]))}</span>' if u.get("timeLeft") else "")
+                         + (f' <span class="label">{escape(team(u))}</span>' if team(u) and not u.get("solo") else "") + "</div>"
+                         + ('<div class="row" style="padding:0;border:0"><div class="body">'
+                            + (f'<div class="lh prog">Progress</div><ul>{"".join(f"<li>{escape(s)}</li>" for s in u["progress"])}</ul>' if u.get("progress") else "")
+                            + (f'<div class="lh next">Next steps</div><ul>{"".join(f"<li>{escape(s)}</li>" for s in u["nextSteps"])}</ul>' if u.get("nextSteps") else "")
+                            + "</div></div></div>"))
+            o.append("</div></div>")
+        o.append("</details></section>")
+    o.append("""</main></div><script>
+let f = 'all';
+function apply() {
+  const who = document.getElementById('who').value;
+  document.querySelectorAll('.proj').forEach(s => {
+    const ok = (f === 'all' || (f === 'active' && s.dataset.status === 'active') || (f === 'quiet' && s.dataset.status === 'quiet')
+      || (f === 'slipping' && s.dataset.trend === 'slipping' && s.dataset.status === 'active'))
+      && (!who || s.dataset.people.split('|').includes(who));
+    s.hidden = !ok;
+  });
+  document.querySelectorAll('[data-f]').forEach(b => b.setAttribute('aria-pressed', b.dataset.f === f));
+  if (parent !== window) parent.postMessage({wpHeight: document.documentElement.scrollHeight}, location.origin);
+}
+document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { f = b.dataset.f; apply(); });
+document.getElementById('who').onchange = apply;
+document.querySelectorAll('details').forEach(d => d.addEventListener('toggle', apply));
+</script></body></html>""")
+    return "".join(o)
