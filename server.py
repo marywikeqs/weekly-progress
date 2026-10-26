@@ -35,10 +35,10 @@ Environment:
   STATE_DIR       where submissions are written     default the Railway volume,
                                                     else ./state
   APP_UID/APP_GID who to run as after claiming a root-owned volume
-  SUPABASE_URL / SUPABASE_SECRET_KEY   Supabase (see store.py; the Vercel
-                  integration sets them). Set = everything lives there instead of
-                  STATE_DIR: one app_kv row per file (wp:config, wp:updates, ...),
-                  screenshots as wp:shot:<name>, the change log in app_changes.
+  KV_REST_API_URL / KV_REST_API_TOKEN   Upstash Redis (Vercel sets these when the
+                  store is connected). Set = everything lives there instead of
+                  STATE_DIR: one key per file (wp:config, wp:updates, ...),
+                  screenshots as wp:shot:<name>, the change log as the list wp:changes.
   CRON_SECRET     Vercel: the hourly /api/cron/mail call must carry it
 
 On Vercel: api/index.py serves this same Handler, one request per call. Each
@@ -61,6 +61,7 @@ import secrets
 import sys
 import threading
 import time
+import urllib.request
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
@@ -70,7 +71,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import mailer
 import report
-import store
 import todoist
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -96,7 +96,8 @@ MAX_SHOT = 8 * 1024 * 1024          # the page shrinks big screenshots before se
 SHOT_RX = re.compile(r"^[a-f0-9]{20}\.(png|jpg|webp)$")
 LOCK = threading.Lock()
 TODOIST_LOCKS: dict = {}      # one Todoist sync at a time per person, so two quick sends can't both create a task
-DB = store.ON          # Supabase connected: data there, not in STATE_DIR
+KV_URL = (os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL") or "").rstrip("/")
+KV_TOKEN = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN") or ""
 ON_VERCEL = bool(os.environ.get("VERCEL"))
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist")
@@ -118,27 +119,43 @@ def now() -> str:
 # and the pages say saves fail, instead of crash-looping on deploy.
 DATA: dict = {}
 WRITABLE = True
-VERSIONS: dict = {}     # Supabase: each row's version when it was read, so two saves can't overwrite each other
+VERSIONS: dict = {}     # Redis: each key's save count when it was read, so two saves can't overwrite each other
 CONFLICT = False        # the last write lost that race
 
 
+def kv(*cmd):
+    """One Redis command over Upstash's REST API (no packages needed)."""
+    req = urllib.request.Request(KV_URL, data=json.dumps(cmd).encode("utf-8"), method="POST",
+                                 headers={"Authorization": f"Bearer {KV_TOKEN}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        out = json.loads(r.read())
+    if "error" in out:
+        raise OSError(out["error"])
+    return out["result"]
+
+
+# set a key only if nobody saved it since we read it; returns the new save count, or -1
+CAS = ("if (redis.call('GET', KEYS[2]) or '0') == ARGV[1] then "
+       "redis.call('SET', KEYS[1], ARGV[2]) return redis.call('INCR', KEYS[2]) else return -1 end")
+
+
 @contextmanager
-def one_at_a_time(name: str, wait: float = 20):
-    """Across every copy of the app: one at a time (a Supabase lock; goes ahead anyway after `wait` seconds)."""
-    if not DB:
+def kv_lock(name: str, wait: float = 20):
+    """Across every copy of the app: one at a time (Redis SET NX; goes ahead anyway after `wait` seconds)."""
+    if not KV_URL:
         with TODOIST_LOCKS.setdefault(name, threading.Lock()):
             yield
         return
-    end, tok = time.monotonic() + wait, None
-    while not tok and time.monotonic() < end:
-        tok = store.lock(f"wp:{name}", 120)
-        if not tok:
-            time.sleep(0.5)
+    key, tok, end, got = f"wp:lock:{name}", secrets.token_hex(8), time.monotonic() + wait, False
+    while not got and time.monotonic() < end:
+        got = kv("SET", key, tok, "NX", "EX", "120") == "OK"
+        if not got:
+            time.sleep(0.4)
     try:
         yield
     finally:
-        if tok:
-            store.unlock(f"wp:{name}", tok)
+        if got:
+            kv("EVAL", "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", "1", key, tok)
 
 
 def _read(name: str, default):
@@ -153,10 +170,10 @@ def _read(name: str, default):
 
 def load() -> None:
     read = _read
-    if DB:
-        rows = store.get_many(f"wp:{k}" for k in KEYS)
-        got = {k: rows[f"wp:{k}"][0] for k in KEYS}
-        VERSIONS.update({k: rows[f"wp:{k}"][1] for k in KEYS})
+    if KV_URL:
+        vals = kv("MGET", *(f"wp:{k}" for k in KEYS), *(f"wp:{k}:v" for k in KEYS))
+        got = {k: json.loads(v) if v else None for k, v in zip(KEYS, vals[:len(KEYS)])}
+        VERSIONS.update({k: v or "0" for k, v in zip(KEYS, vals[len(KEYS):])})
         read = lambda name, default: default if got[name[:-5]] is None else got[name[:-5]]
     cfg = read("config.json", None)
     if cfg is None:
@@ -206,7 +223,7 @@ def purge_retired() -> None:
         DATA[key], hit = _strip(DATA[key])
         if hit:
             write(key)
-    if DB:              # the change log in Supabase was written after the purge
+    if KV_URL:          # the change log in Redis was written after the purge
         return
     try:
         if LOG.exists():
@@ -230,19 +247,19 @@ def purge_retired() -> None:
 def write(key: str) -> bool:
     global WRITABLE, CONFLICT
     CONFLICT = False
-    if DB:
+    if KV_URL:
         try:
-            v = store.save(f"wp:{key}", DATA[key], VERSIONS.get(key, 0))
+            v = kv("EVAL", CAS, "2", f"wp:{key}", f"wp:{key}:v", VERSIONS.get(key, "0"), json.dumps(DATA[key], ensure_ascii=False))
         except (OSError, ValueError) as exc:
             WRITABLE = False
-            sys.stderr.write(f"could not save {key} to Supabase: {exc}\n")
+            sys.stderr.write(f"could not save {key} to Redis: {exc}\n")
             return False
         WRITABLE = True
         if v == -1:
             CONFLICT = True
             sys.stderr.write(f"{key} changed since it was read; not saved\n")
             return False
-        VERSIONS[key] = v
+        VERSIONS[key] = str(v)
         return True
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -260,10 +277,11 @@ def write(key: str) -> bool:
 def merge_save(key: str, change) -> bool:
     """Re-read one key, apply change(value), save; again if someone saved in between."""
     for _ in range(5):
-        if DB:
-            value, VERSIONS[key] = store.get_many([f"wp:{key}"])[f"wp:{key}"]
-            if value is not None:
-                DATA[key] = value
+        if KV_URL:
+            raw, v = kv("MGET", f"wp:{key}", f"wp:{key}:v")
+            if raw:
+                DATA[key] = json.loads(raw)
+            VERSIONS[key] = v or "0"
         change(DATA[key])
         if write(key) or not CONFLICT:
             return WRITABLE and not CONFLICT
@@ -271,9 +289,10 @@ def merge_save(key: str, change) -> bool:
 
 
 def log_change(action: str, kind: str, before, after) -> None:
-    if DB:
+    if KV_URL:
         try:
-            store.log("weekly-progress", {"at": now(), "action": action, "kind": kind, "before": before, "after": after})
+            kv("RPUSH", "wp:changes", json.dumps({"at": now(), "action": action, "kind": kind,
+                                                  "before": before, "after": after}, ensure_ascii=False))
         except (OSError, ValueError) as exc:
             sys.stderr.write(f"could not append to the change log: {exc}\n")
         return
@@ -427,9 +446,9 @@ def save_shot(shot) -> str | None:
     if not magic or not raw or len(raw) > MAX_SHOT:
         return None
     fname = f"{secrets.token_hex(10)}.{ext}"
-    if DB:
+    if KV_URL:
         try:
-            store.save(f"wp:shot:{fname}", base64.b64encode(raw).decode("ascii"), 0)
+            kv("SET", f"wp:shot:{fname}", base64.b64encode(raw).decode("ascii"))
         except (OSError, ValueError) as exc:
             sys.stderr.write(f"could not save screenshot: {exc}\n")
             return None
@@ -444,16 +463,16 @@ def save_shot(shot) -> str | None:
 
 
 def read_shot(fname: str) -> bytes | None:
-    if DB:
-        b = store.get(f"wp:shot:{fname}")
+    if KV_URL:
+        b = kv("GET", f"wp:shot:{fname}")
         return base64.b64decode(b) if b else None
     return (SHOTS / fname).read_bytes() if (SHOTS / fname).is_file() else None
 
 
 def drop_shot(fname: str) -> None:
     try:
-        if DB:
-            store.delete(f"wp:shot:{fname}")
+        if KV_URL:
+            kv("DEL", f"wp:shot:{fname}")
         else:
             (SHOTS / fname).unlink()
     except (OSError, ValueError):
@@ -527,14 +546,14 @@ def mail_once() -> None:
         to = mailer.recipients(DATA["config"])
         due = due_emails() if to else []
     for week, r, reason in due:
-        if DB and (store.get(f"wp:sentmark:{week}") or not store.lock(f"wp:mailing:{week}", 300)):
+        if KV_URL and (kv("HGET", "wp:sentmark", week) or kv("SET", f"wp:mailing:{week}", now(), "NX", "EX", "300") != "OK"):
             continue          # it just went out, or another copy of the app is sending it right now
         ok, detail = mailer.send(to, mailer.subject(r), mailer.html(r), mailer.plain(r))
         with LOCK:
             if ok:
                 rec = {"at": now(), "to": to, "reason": reason, "id": detail}
-                if DB:
-                    store.save(f"wp:sentmark:{week}", rec["at"], 0)
+                if KV_URL:
+                    kv("HSET", "wp:sentmark", week, rec["at"])
                     merge_save("sent", lambda s: s.__setitem__(week, rec))
                 else:
                     DATA["sent"][week] = rec
@@ -632,7 +651,7 @@ def claim_state_dir() -> None:
 
 
 def state_persistent() -> bool:
-    if DB:
+    if KV_URL:
         return True
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -710,20 +729,16 @@ class Handler(BaseHTTPRequestHandler):
         return f"{proto}://{host}"
 
     def fresh(self) -> bool:
-        """With Supabase, read the latest data first (other copies of the app may have saved)."""
-        if not DB or urlsplit(self.path).path in ("/", "/index.html", "/admin", "/admin.html"):
+        """With Redis, read the latest data first (other copies of the app may have saved)."""
+        if not KV_URL or urlsplit(self.path).path in ("/", "/index.html", "/admin", "/admin.html"):
             return True
         try:
             with LOCK:
                 load()
             return True
         except (OSError, ValueError) as exc:
-            sys.stderr.write(f"could not read Supabase: {exc}\n")
-            # just the status and Postgres error code (no data), so setup problems can be told apart
-            code = re.search(r"Supabase (\d+)|Couldn't reach", str(exc))
-            pg = re.search(r'"code"\s*:\s*"(\w+)"', str(exc))
-            self.send_json(503, {"error": "Couldn't reach the data store. Try again in a minute.",
-                                 "code": " ".join(x for x in ((code.group(1) or "unreachable") if code else "other", pg.group(1) if pg else "") if x)})
+            sys.stderr.write(f"could not read Redis: {exc}\n")
+            self.send_json(503, {"error": "Couldn't reach the data store. Try again in a minute."})
             return False
 
     # GET ------------------------------------------------------------
@@ -993,9 +1008,9 @@ class Handler(BaseHTTPRequestHandler):
             known = {k[len(prefix):]: v for k, v in DATA["todoist"]["tasks"].items() if k.startswith(prefix)}
         if token:
             # outside the main lock: the update is already saved; Todoist trouble is reported, not fatal
-            with one_at_a_time("todoist:" + name):
+            with kv_lock("todoist:" + name):
                 with LOCK:
-                    if DB:
+                    if KV_URL:
                         load()
                     known = {k[len(prefix):]: v for k, v in DATA["todoist"]["tasks"].items() if k.startswith(prefix)}
                     # teammates' tasks for the same projects, so everyone's update lands on one task
