@@ -33,14 +33,10 @@ OUT = ROOT / "_test" / "out"
 PORT = 8091
 BASE = f"http://127.0.0.1:{PORT}"
 TEAM = ("team", "t-pass")
-# Run with KV_REST_API_URL / KV_REST_API_TOKEN set (e.g. a stand-in Upstash) to test the Redis storage used on Vercel
-KV = os.environ.get("KV_REST_API_URL", "")
-
-
-def kv(*cmd):
-    req = urllib.request.Request(KV, data=json.dumps(cmd).encode(), method="POST",
-                                 headers={"Authorization": "Bearer " + os.environ.get("KV_REST_API_TOKEN", "")})
-    return json.loads(urllib.request.urlopen(req).read())["result"]
+# Run with SUPABASE_URL / SUPABASE_SECRET_KEY set (e.g. a stand-in Supabase) to test the storage used on Vercel
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import store  # noqa: E402
+DB = store.ON
 
 
 ADMIN = ("admin", "a-pass")
@@ -473,7 +469,7 @@ def run():
     check(s == 200 and d["deleted"] == {"updates": 1, "tasks": 0, "usage": 1}, "admin deletes the whole send")
     mine = call("GET", f"/api/mine?name=Casey%20Test&week={w9}")[1]
     check(not mine["updates"] and mine["usage"] is None, "...and it's gone from the form")
-    check(not (kv("GET", f"wp:shot:{tshot}") if KV else (OUT / "state" / "screenshots" / tshot).exists()), "...and its screenshot file")
+    check(not (store.get(f"wp:shot:{tshot}") if DB else (OUT / "state" / "screenshots" / tshot).exists()), "...and its screenshot file")
     check(call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}", auth=ADMIN)[0] == 404, "deleting again: nothing there")
     check(call("GET", f"/api/mine?name=Casey%20Test&week={w1}")[1]["updates"], "other weeks untouched")
 
@@ -589,10 +585,11 @@ def run():
     call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}", auth=ADMIN)
 
     print("persistence")
-    if KV:
+    if DB:
         check(not (OUT / "state").exists(), "nothing written to disk")
-        check(all(kv("GET", f"wp:{k}") for k in ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist"))
-              and kv("LLEN", "wp:changes") > 0, "everything is in Redis, with the change log")
+        rows = store.get_many(f"wp:{k}" for k in ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist"))
+        check(all(v is not None for v, _ in rows.values()) and store.count_changes("weekly-progress") > 0,
+              "everything is in Supabase, with the change log")
         return
     files = sorted(p.name for p in (OUT / "state").iterdir())
     check(files == ["changes.jsonl", "config.json", "drafts.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")

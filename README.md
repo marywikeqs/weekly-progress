@@ -44,13 +44,14 @@ On the volume: `config.json`, `updates.json`, `tasks.json`, `usage.json`, `sent.
 function (behind the passwords), never as open static files. On Vercel the
 site stays closed until both `APP_PASSWORD` and `ADMIN_PASSWORD` are set.
 
-Data lives in Upstash Redis (Vercel → Storage → Upstash for Redis, connected to
-the project; it sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`). The report
-email is checked after every send and by an hourly Vercel cron
-(`/api/cron/mail`, needs `CRON_SECRET`). Also set `RESEND_API_KEY` and
-`PUBLIC_URL` (the Vercel address, for the email's links).
+Data lives in Supabase (`store.py`): run `supabase.sql` once in the SQL Editor,
+and connect the Supabase project to the Vercel project (it sets `SUPABASE_URL`
+and `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY`). The report email is
+checked after every send and by an hourly Vercel cron (`/api/cron/mail`, needs
+`CRON_SECRET`), which also keeps a free Supabase project from pausing. Also set
+`RESEND_API_KEY` and `PUBLIC_URL` (the Vercel address, for the email's links).
 
 Moving data in: download `/api/admin/backup` from the old host, then
-`python _test/import_backup.py backup.json` with the two KV variables set.
-Tests against Redis: run `_test/api_test.py` with `KV_REST_API_URL`,
-`KV_REST_API_TOKEN` and `VERCEL=1` pointing at a stand-in Upstash.
+`python _test/import_backup.py backup.json` with the two Supabase variables set.
+Tests against Supabase: run `_test/api_test.py` with `SUPABASE_URL`,
+`SUPABASE_SECRET_KEY` and `VERCEL=1` pointing at a stand-in.

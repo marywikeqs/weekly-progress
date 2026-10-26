@@ -6,7 +6,7 @@
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
   "functions": {
     "api/index.py": {
-      "includeFiles": "{server.py,report.py,mailer.py,todoist.py,index.html,admin.html,data/**}",
+      "includeFiles": "{server.py,store.py,report.py,mailer.py,todoist.py,index.html,admin.html,data/**}",
       "maxDuration": 60
     }
   },
