@@ -431,6 +431,12 @@ def run():
                         {"name": "A", "week": "2026-10-16", "project": "x", "type": "Claude", "timeLeft": "1–3 months"},
                         {"name": "B", "week": "2026-10-16", "project": "Y", "type": "Non-Claude", "timeLeft": "3–5 days"},
                         {"name": "B", "week": "2026-10-09", "project": "Z", "type": "Non-Claude", "timeLeft": "1–2 days"}]}
+    import server as sv
+    old = [{"ideas": [{"idea": "Alerts", "why": "a"}]}, {"ideas": [{"idea": "Map", "why": "b"}, {"idea": "alerts", "why": "newer"}]}]
+    check(sv.carried_ideas(old) == [{"idea": "Map", "why": "b"}, {"idea": "alerts", "why": "newer"}],
+          "ideas from every earlier send carry over, newest wording kept")
+    check(sv.carried_ideas(old + [{"ideasCarried": True, "ideas": [{"idea": "Map", "why": "b"}]}]) == [{"idea": "Map", "why": "b"}],
+          "an idea removed on a send since then stays removed")
     pj = {x["project"]: x for x in rp.projects(fake)["projects"]}
     check(pj["x"]["trend"] == "slipping" and pj["x"]["trail"] == ["1–2 weeks", "1–3 months"] and pj["x"]["weeks"] == 2,
           "same project across weeks (any case) joins up; longer time left = slipping")

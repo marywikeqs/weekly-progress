@@ -404,6 +404,22 @@ def clean_update(d: dict) -> dict | str:
     return out
 
 
+def carried_ideas(earlier: list) -> list:
+    """Upcoming project ideas for a new week, from a person's earlier sends (oldest first). A send made
+    since ideas carried over holds the full list (anything missing was removed); older sends add theirs.
+    The newest wording of each idea wins."""
+    out: dict = {}
+    for u in earlier:
+        if u.get("ideasCarried"):
+            out = {}
+        for x in u.get("ideas") or []:
+            key = x.get("idea", "").strip().lower()
+            if key:
+                out.pop(key, None)
+                out[key] = x
+    return list(out.values())
+
+
 def task_categories() -> list:
     """The admin's categories plus any typed in before, so they stay pickable."""
     out = {c.lower(): c for c in DATA["config"].get("taskCategories", [])}
@@ -817,7 +833,7 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             return self.send_json(200, {"updates": ups, "usage": use, "tasks": tasks,
                                         "lastBudget": earlier[-1]["budget"] if earlier else None,
-                                        "lastIdeas": earlier[-1].get("ideas") or [] if earlier else [],
+                                        "lastIdeas": carried_ideas(earlier),
                                         "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft, "todoist": linked,
                                         "todoistDone": done})
 
@@ -958,7 +974,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif status not in report.IDEA_CHOICES:
                     errors.append({"idea": i, "error": "Say where the idea stands: need a greenlight, let's discuss, or just an idea."})
                 ideas.append({"idea": idea, "why": why, "status": status})
-            ideas = ideas[:10]
+            ideas = ideas[:50]
             # tweaks (optional): small changes to an existing project or tool, not a full build
             tweaks = []
             for i, x in enumerate(body.get("tweaks") or []):
@@ -988,6 +1004,7 @@ class Handler(BaseHTTPRequestHandler):
                                                 "errors": [{"usage": True, "error": "That screenshot couldn't be read."}]})
             usage["screenshot"] = shot
             usage["ideas"] = ideas
+            usage["ideasCarried"] = True        # this list started from every earlier idea, so it's the whole list now
             usage["tweaks"] = tweaks
 
             # projects: replace this person's week with what was sent

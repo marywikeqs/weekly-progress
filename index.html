@@ -329,7 +329,7 @@ async function load() {
 // ---- drafts: the form as typed, kept on the server until sent ----
 function readForm() {
   return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('#tasks .task')].map(readTask),
-          tweaks: [...document.querySelectorAll('.tweak')].map(readTweak), ideas: [...document.querySelectorAll('.idea')].map(readIdea), ideasCarried: true, spend: $('spend').value, budget: $('budget').value};
+          tweaks: [...document.querySelectorAll('.tweak')].map(readTweak), ideas: [...document.querySelectorAll('.idea')].map(readIdea), ideasFrom: 'all', spend: $('spend').value, budget: $('budget').value};
 }
 function applyForm(f) {
   $('projects').innerHTML = ''; cardSeq = 0;
@@ -344,7 +344,7 @@ function applyForm(f) {
   tweaksEmpty();
   $('ideas').innerHTML = '';
   let ideas = f.ideas || [];
-  if (!f.ideasCarried && !MINE.usage) {   // a draft saved before ideas carried over: bring last week's back in
+  if (f.ideasFrom !== 'all' && !MINE.usage) {   // a draft saved before every earlier idea carried over: bring them in
     const have = new Set(ideas.map(x => (x.idea || '').trim().toLowerCase()));
     ideas = ideas.concat((MINE.lastIdeas || []).filter(x => !have.has((x.idea || '').trim().toLowerCase())));
   }
