@@ -177,7 +177,7 @@ def html(r: dict, note: str = "") -> str:
                      f'<b>{escape(u["project"])}</b><br>{pill("Claude project", report.ACCENT) if u["type"] == "Claude" else pill("Non-Claude project", report.TEAL)}'
                      f'{" " + pill("New this week", report.GREEN) if u["new"] else ""}'
                      + (f'<div style="font-size:12px;font-weight:bold;color:{MUTED};margin-top:4px">'
-                        + " · ".join(x for x in (f'⏳ {escape(report.time_left(u["timeLeft"]))}' if u.get("timeLeft") else "",
+                        + " · ".join(x for x in (escape(report.tl_badge(u["timeLeft"])) if u.get("timeLeft") else "",
                                                  f'{"👤" if u.get("solo") else "👥"} {escape(report.team(u))}' if report.team(u) else "") if x)
                         + '</div>' if u.get("timeLeft") or report.team(u) else "") +
                      f'<div style="font-size:11px;font-weight:bold;color:{report.GREEN};margin-top:4px">PROGRESS</div><ul {ul}>' + "".join(f"<li>{escape(x)}</li>" for x in u["progress"]) + "</ul>"

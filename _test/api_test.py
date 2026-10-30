@@ -255,6 +255,7 @@ def run():
     check(send("Avery Test", w1, [], use)[0] == 400, "needs at least one project")
     check(send("Avery Test", w1, [{**cat, "progress": ["", " "]}], use)[0] == 400, "needs a progress line")
     check(send("Avery Test", w1, [{**cat, "nextSteps": [" "]}], use)[0] == 400, "needs a next step")
+    check(send("Avery Test", w1, [{**cat, "nextSteps": [" "], "timeLeft": "Ghost"}], use)[0] == 400, "...still needed with a bad time left")
     s, d = send("Avery Test", w1, [{**cat, "timeLeft": ""}], use)
     check(s == 400 and "time is left" in d["error"], "needs time left on each project")
     check(send("Avery Test", w1, [{**cat, "timeLeft": "forever"}], use)[0] == 400, "time left must be one of the choices")
@@ -334,6 +335,8 @@ def run():
          {"spend": 100, "budget": 250, "increaseRequested": False, "screenshot": data_url((90, 90, 90))})
     w2 = (fri + timedelta(days=7)).isoformat()
     s, d = call("GET", f"/api/mine?name=Avery%20Test&week={w2}")
+    check(d["lastIdeas"] == call("GET", f"/api/mine?name=Avery%20Test&week={w1}")[1]["usage"]["ideas"] and d["lastIdeas"],
+          "last week's upcoming project ideas carry into the new week")
     check(d["lastBudget"] == 500 and d["lastWeek"] == w1 and len(d["lastProjects"]) == 2 and len(d["lastTasks"]) == 1,
           "next week starts from this week's projects, other work and budget")
 
@@ -432,6 +435,13 @@ def run():
     check(pj["x"]["trend"] == "slipping" and pj["x"]["trail"] == ["1–2 weeks", "1–3 months"] and pj["x"]["weeks"] == 2,
           "same project across weeks (any case) joins up; longer time left = slipping")
     check(pj["Z"]["quietFor"] == 1 and pj["Y"]["quietFor"] == 0 and pj["Y"]["trend"] == "", "gone quiet = no update in the latest week")
+    fake["updates"].append({"name": "B", "week": "2026-10-09", "project": "Done Thing", "type": "Claude", "timeLeft": "Complete"})
+    pr = rp.projects(fake)
+    pj = {x["project"]: x for x in pr["projects"]}
+    check(pj["Done Thing"]["complete"] and pj["Done Thing"]["quietFor"] == 0 and pr["counts"]["complete"] == 1
+          and pr["counts"]["quiet"] == 1 and pr["projects"][-1]["project"] == "Done Thing",
+          "a project marked Complete isn't 'gone quiet', is counted complete and sorts last")
+    check("✅ Complete" in rp.render_projects(pr) and rp.tl_badge("Complete") == "✅ Complete", "projects page shows it complete")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
     check("⚑" in html, "over-80% flag shown (Avery 86%)")
     check("+$130" in html, "weekly spend change (430 − 300)")
@@ -596,6 +606,16 @@ def run():
           "the teammate doesn't take over Casey's steps")
     call("DELETE", f"/api/admin/send?name=Blake%20Test&week={w9}", auth=ADMIN)
     call("DELETE", "/api/todoist?name=Blake%20Test", auth=ADMIN)
+
+    print("complete projects")
+    s, d = send("Casey Test", w9, [proj("Pipeline Hygiene", "Claude", "", ["Cleaned"], "1-3 hrs", steps=["Close out Q4 list", "Merge duplicates"]),
+                                   {**proj("Wrap Up", "Claude", "", ["Shipped it"]), "timeLeft": "Complete", "nextSteps": []}], use)
+    wrap = next((t for t in TODO.values() if not t["parent_id"] and t["content"] == "Wrap Up"), None)
+    check(s == 200 and wrap and wrap["checked"], f"a Complete project needs no next steps and its Todoist task is closed: {s} {d.get('todoist')}")
+    nxt = call("GET", f"/api/mine?name=Casey%20Test&week={w8}")[1]
+    check([u["project"] for u in nxt["lastProjects"]] == ["Pipeline Hygiene"], "a Complete project doesn't carry into the next week")
+    s, html = call("GET", f"/report?week={w9}", auth=ADMIN, raw=True)
+    check("✅ Complete" in html.decode(), "the report shows it complete")
 
     good = GOOD_TOKEN
     globals()["GOOD_TOKEN"] = "c3" * 20          # the token stops working

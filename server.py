@@ -372,10 +372,10 @@ def clean_update(d: dict) -> dict | str:
     bullets, steps = lines("progress"), lines("nextSteps")
     if not bullets:
         return "Add at least one line of progress this week."
-    if not steps:
-        return "Add at least one next step."
     if d.get("timeLeft") not in TIME_LEFT:
         return "Choose how much time is left on the project."
+    if not steps and d["timeLeft"] != report.COMPLETE:       # a finished project needs no next steps
+        return "Add at least one next step."
     # solo, or with whom: teammates from the roster and anyone typed in
     solo = d.get("solo")
     if solo not in (True, False):
@@ -798,7 +798,8 @@ class Handler(BaseHTTPRequestHandler):
                 use = next((u for u in DATA["usage"] if u["name"] == name and u["week"] == week), None)
                 earlier = sorted((u for u in DATA["usage"] if u["name"] == name and u["week"] < week), key=lambda u: u["week"])
                 prev_week = max((u["week"] for u in DATA["updates"] if u["name"] == name and u["week"] < week), default=None)
-                prev = [u for u in DATA["updates"] if u["name"] == name and u["week"] == prev_week]
+                prev = [u for u in DATA["updates"] if u["name"] == name and u["week"] == prev_week
+                        and u.get("timeLeft") != report.COMPLETE]          # finished projects don't carry over
                 tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == week]
                 prev_tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == prev_week]
                 draft = DATA["drafts"].get(f"{name}|{week}")
@@ -816,6 +817,7 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             return self.send_json(200, {"updates": ups, "usage": use, "tasks": tasks,
                                         "lastBudget": earlier[-1]["budget"] if earlier else None,
+                                        "lastIdeas": earlier[-1].get("ideas") or [] if earlier else [],
                                         "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft, "todoist": linked,
                                         "todoistDone": done})
 

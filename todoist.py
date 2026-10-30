@@ -167,7 +167,8 @@ def send(token: str, projects: list, known: dict, week: str = "", sender: str = 
                 task = None
             if task:
                 rec = {**rec, "id": task["id"]}
-        if task and _done(task):
+        finished = u.get("timeLeft") == "Complete"
+        if task and _done(task) and not finished:
             _call(token, "POST", f"/tasks/{task['id']}/reopen")          # still going: bring it back
         if not task:
             if open_tops is None:
@@ -228,6 +229,9 @@ def send(token: str, projects: list, known: dict, week: str = "", sender: str = 
                 out["comments"] += 1
             if c and c.get("id"):
                 comments[week] = c["id"]
+        if finished and not _done(task):
+            _call(token, "POST", f"/tasks/{task['id']}/close")            # project complete: close it (its subtasks go with it)
+            out["closed"] += 1
         known[key] = {"id": task["id"], "steps": {n: s for n, s in steps.items() if s}, "comments": comments}
         out["projects"] += 1
     return out

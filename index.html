@@ -135,7 +135,7 @@ button:disabled{opacity:.6;cursor:default}
       <button type="button" class="add-line" id="add-task">+ Add other work</button>
     </div>
 
-    <h2>Upcoming project ideas <span class="opt">Anything you'd like to take on next (optional)</span></h2>
+    <h2>Upcoming project ideas <span class="opt">Anything you'd like to take on next (optional). Your ideas carry over each week; remove any you've started or dropped.</span></h2>
     <div class="card">
       <div id="ideas"></div>
       <p id="ideas-empty">Nothing added.</p>
@@ -296,7 +296,7 @@ async function load() {
                progress: finished, nextSteps: steps.filter(s => !done.has(norm(s))), carried: true});
     });
     if (!carry.length) addCard();
-    st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Last week's next steps are filled in: click ✓ Done on each one you finished and it moves to Progress. Update each project (check the time left), and remove any you didn't work on this week.`
+    st.textContent = carry.length ? `Started from your projects for the week ending ${fmtWeek(MINE.lastWeek)}. Last week's next steps are filled in: click ✓ Done on each one you finished and it moves to Progress. Update each project (check the time left), and remove any you didn't work on this week. Finished one? Set its time left to Complete.`
       + (fromTodoist ? ` ${fromTodoist} step${fromTodoist === 1 ? ' you' : 's you'} checked off in Todoist ${fromTodoist === 1 ? 'is' : 'are'} already in Progress.` : '') : '';
     st.hidden = !carry.length;
   }
@@ -309,7 +309,7 @@ async function load() {
   (MINE.usage?.tweaks || []).forEach(x => addTweak(x));
   tweaksEmpty();
   $('ideas').innerHTML = '';
-  (MINE.usage?.ideas || []).forEach(x => addIdea(x));
+  (MINE.usage ? MINE.usage.ideas || [] : MINE.lastIdeas || []).forEach(x => addIdea(x));   // ideas carry over until removed
   ideasEmpty();
   fillUsage();
   todoShow();
@@ -407,7 +407,7 @@ function addCard(u = {}) {
     <span class="lbl">Progress this week</span>
     <div class="lines" data-cls="f-b" data-label="Progress this week" data-first="What moved this week"></div>
     <button type="button" class="more">+ Add a line</button>
-    <span class="lbl">Next steps</span>
+    <span class="lbl">Next steps<span class="f-nopt" hidden> (optional, project complete)</span></span>
     <div class="lines" data-cls="f-n" data-label="Next steps" data-first="What's next"></div>
     <button type="button" class="more">+ Add a line</button>
     <div class="card-err" hidden></div>
@@ -420,6 +420,8 @@ function addCard(u = {}) {
   }
   q('.f-type').value = u.type || '';
   q('.f-left').value = u.timeLeft || '';
+  const doneSync = () => { q('.f-nopt').hidden = q('.f-left').value !== 'Complete'; };
+  q('.f-left').addEventListener('change', doneSync); doneSync();
   if (u.solo === true || u.solo === false) el.querySelector(`.f-solo input[value=${u.solo ? 'solo' : 'team'}]`).checked = true;
   const mates = new Set();
   el.querySelectorAll('.chips input').forEach(c => { if ((u.with || []).includes(c.value)) { c.checked = true; mates.add(c.value); } });
@@ -507,7 +509,7 @@ function fold(el, shut) {
     const who = d.solo ? '👤 Solo' : '👥 With ' + d.with.join(', ');
     const n = (k, one) => `${k} ${one}${k === 1 ? '' : 's'}`;
     q('.proj-sum').innerHTML = `<strong>${esc(d.project)}</strong>
-      <span class="meta">${esc(d.type)} project · ⏳ ${esc(d.timeLeft)}${/^Ongoing/.test(d.timeLeft) ? '' : ' left'} · ${esc(who)}${d.claudeFit ? ' · 🤖 Claude could help: ' + esc(d.claudeFit) : ''}</span>
+      <span class="meta">${esc(d.type)} project · ${d.timeLeft === 'Complete' ? '✅ Complete' : '⏳ ' + esc(d.timeLeft) + (/^Ongoing/.test(d.timeLeft) ? '' : ' left')} · ${esc(who)}${d.claudeFit ? ' · 🤖 Claude could help: ' + esc(d.claudeFit) : ''}</span>
       <span class="first">${esc(d.progress[0] || '')}</span>
       <span class="meta">${n(d.progress.length, 'progress line')} · ${n(d.nextSteps.length, 'next step')}</span>`;
   }
@@ -550,7 +552,7 @@ function checkCard(el, d) {   // the server's rules, checked here to point at th
   if (d.type === 'Non-Claude' && !d.claudeFit) bad.push([q('.f-fitseg'), 'Say whether Claude could help.']);
   else if (d.claudeFit && d.claudeFit !== 'No' && !d.claudeHow) bad.push([q('.f-how'), 'Say how Claude could help.']);
   if (!d.progress.length) bad.push([q('.f-b'), 'Add at least one line of progress.']);
-  if (!d.nextSteps.length) bad.push([q('.f-n'), 'Add at least one next step.']);
+  if (!d.nextSteps.length && d.timeLeft !== 'Complete') bad.push([q('.f-n'), 'Add at least one next step.']);
   return bad;
 }
 function cardError(el, text, fields = []) {

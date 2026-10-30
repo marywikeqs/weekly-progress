@@ -28,7 +28,9 @@ def fit_text(u: dict) -> str:
     return f"Could Claude help? {u['claudeFit']}" + (f" — {u['claudeHow']}" if u.get("claudeHow") else "")
 
 
-TIME_LEFT = ["1–2 days", "3–5 days", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date"]
+# "Complete" closes the project out: no next steps needed, and it doesn't carry into the next week
+COMPLETE = "Complete"
+TIME_LEFT = ["1–2 days", "3–5 days", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date", COMPLETE]
 FLAG_AT = 80  # percent of budget
 
 
@@ -227,7 +229,7 @@ def render_text(r: dict, base_url: str = "") -> str:
     lines.append(f"*Projects:* {c['projects']}{_delta(c['projects'], l['projects'], hp)} — "
                  f"{c['claude']} Claude · {c['nonClaude']} non-Claude")
     for pp in r["people"]:
-        line = ", ".join(u["project"] + (f" ({u['timeLeft']} left)" if u.get("timeLeft") else "") for u in pp["projects"])
+        line = ", ".join(u["project"] + (f" ({time_left(u['timeLeft'])})" if u.get("timeLeft") else "") for u in pp["projects"])
         if pp["tasks"]:
             line += (" · " if line else "") + "other work: " + ", ".join(t["category"] for t in pp["tasks"])
         lines.append(f"   • *{pp['name']}:* {line}")
@@ -376,7 +378,12 @@ def team(u: dict) -> str:
 
 def time_left(t: str) -> str:
     """'2–4 weeks' -> '2–4 weeks left'; the end-state options read as they are."""
-    return t if t.startswith(("Wrapping", "Ongoing")) else t + " left"
+    return t if t.startswith(("Wrapping", "Ongoing", COMPLETE)) else t + " left"
+
+
+def tl_badge(t: str) -> str:
+    """'⏳ 2–4 weeks left', or '✅ Complete' for a finished project."""
+    return ("✅ " if t == COMPLETE else "⏳ ") + time_left(t)
 
 
 def _pill(text: str, colour: str) -> str:
@@ -486,7 +493,7 @@ def render_html(r: dict, weeks: list, embed: bool = False) -> str:
             o.append(f'<div class="row"><span class="ring{" claude" if u["type"] == "Claude" else ""}"></span><div class="body">'
                      f'<div class="top"><strong>{escape(u["project"])}</strong>{_label(u["type"])}'
                      + (_pill("New this week", GREEN) if u["new"] else "")
-                     + (f'<span class="tleft">⏳ {escape(time_left(u["timeLeft"]))}</span>' if u.get("timeLeft") else "")
+                     + (f'<span class="tleft">{escape(tl_badge(u["timeLeft"]))}</span>' if u.get("timeLeft") else "")
                      + (f'<span class="tleft">{"👤" if u.get("solo") else "👥"} {escape(team(u))}</span>' if team(u) else "") + "</div>"
                      + '<div class="lh prog">Progress</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["progress"]) + "</ul>"
                      + ('<div class="lh next">Next steps</div><ul>' + "".join(f"<li>{escape(b)}</li>" for b in u["nextSteps"]) + "</ul>" if u.get("nextSteps") else "")
@@ -574,8 +581,8 @@ t.style.display='block';setTimeout(()=>t.style.display='none',2500);}}</script><
 
 # ---------------- projects over time ----------------
 
-# how far off each "Time left" answer is, to tell moving from slipping; Ongoing has no end, so no trend
-_TL_RANK = {t: i for i, t in enumerate(TIME_LEFT[:-1])}
+# how far off each "Time left" answer is, to tell moving from slipping; Ongoing has no end and Complete is done, so no trend
+_TL_RANK = {t: i for i, t in enumerate(TIME_LEFT[:-2])}
 
 
 def projects(data: dict) -> dict:
@@ -602,22 +609,25 @@ def projects(data: dict) -> dict:
             now_r, before_r = soonest[max(soonest)], soonest[sorted(soonest)[-2]]
             trend = "slipping" if now_r > before_r else "moving" if now_r < before_r else "steady"
         gap = (date.fromisoformat(latest) - date.fromisoformat(weeks[0])).days // 7
+        done = any(u.get("timeLeft") == COMPLETE for u in rows if u["week"] == weeks[0])   # marked complete in its last update
         out.append({
             "project": last["project"], "type": last["type"],
             "people": sorted({u["name"] for u in rows}),
             "first": weeks[-1], "last": weeks[0], "weeks": len(weeks),
-            "quietFor": gap,                         # weeks since its last update (0 = updated in the latest week)
+            "quietFor": 0 if done else gap,          # weeks since its last update (0 = updated in the latest week)
+            "complete": done, "completedOn": weeks[0] if done else None,
             "trend": trend, "trail": [t for i, t in enumerate(trail) if i == 0 or t != trail[i - 1]],
             "timeline": [{"week": w, "entries": sorted((u for u in rows if u["week"] == w), key=lambda u: u["name"])}
                          for w in weeks],
         })
     order = {"slipping": 0, "moving": 1, "steady": 2, "": 3}
-    out.sort(key=lambda p: (p["quietFor"] > 0, order[p["trend"]], p["project"].lower()))
-    active = [p for p in out if not p["quietFor"]]
+    out.sort(key=lambda p: (p["complete"], p["quietFor"] > 0, order[p["trend"]], p["project"].lower()))
+    active = [p for p in out if not p["quietFor"] and not p["complete"]]
     return {"latest": latest, "projects": out,
             "counts": {"active": len(active), "new": sum(p["first"] == latest for p in out),
                        "slipping": sum(p["trend"] == "slipping" for p in active),
-                       "quiet": sum(p["quietFor"] > 0 for p in out)}}
+                       "quiet": sum(p["quietFor"] > 0 for p in out),
+                       "complete": sum(p["complete"] for p in out)}}
 
 
 PROJECTS_STYLE = """
@@ -626,7 +636,7 @@ PROJECTS_STYLE = """
 .filters button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
 .filters select{font:inherit;font-size:12.5px;padding:4px 8px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink)}
 .proj{border:1px solid var(--edge);border-left:4px solid var(--c);border-radius:10px;padding:14px 16px 6px;margin-top:14px;background:var(--bg)}
-.proj.quiet{opacity:.75}
+.proj.quiet,.proj.complete{opacity:.75}
 .proj-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
 .proj-head h3{margin:0;font-size:16px}
 .proj-meta{font-size:12.5px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
@@ -634,7 +644,7 @@ PROJECTS_STYLE = """
 .trail{font-size:12.5px;margin-top:6px;color:var(--muted)}
 .trail b{color:var(--ink);font-weight:600}
 .flag{font-size:12px;font-weight:600}
-.flag.slipping{color:var(--p1)}.flag.moving{color:var(--done)}.flag.steady{color:var(--muted)}.flag.quiet{color:var(--p2)}
+.flag.complete{color:var(--done)}.flag.slipping{color:var(--p1)}.flag.moving{color:var(--done)}.flag.steady{color:var(--muted)}.flag.quiet{color:var(--p2)}
 details.tl{margin-top:8px;border-top:1px solid var(--line)}
 details.tl summary{cursor:pointer;font-size:12.5px;color:var(--muted);padding:8px 0;list-style:none}
 details.tl summary::-webkit-details-marker{display:none}
@@ -662,16 +672,18 @@ def render_projects(p: dict, embed: bool = False) -> str:
 <nav>{"".join(f'<a href="#pr-{i}" style="--c:{ACCENT if x["type"] == "Claude" else TEAL}"><i></i><em>{escape(x["project"])}</em><span>{x["weeks"]}w</span></a>' for i, x in enumerate(p["projects"]))}</nav>
 <div class="actions"><button type="button" onclick="print()">Print / Save as PDF</button><a href="/report">Weekly report</a><a href="/export/updates.csv">Projects CSV</a><a href="/admin">Admin</a></div></aside>
 <main><h1>Projects</h1><p class="sub">Every project across all weeks, and how it's moving. Latest week: ending {escape(nice_date(p["latest"]))}.</p>
-<div class="stats">{_stat(str(c["active"]), "active projects", "updated in the latest week", BLUE)}{_stat(str(c["new"]), "new", "started in the latest week", GREEN)}{_stat(str(c["slipping"]), "slipping", "time left got longer", ACCENT)}{_stat(str(c["quiet"]), "gone quiet", "no update in the latest week", ORANGE)}</div>
+<div class="stats">{_stat(str(c["active"]), "active projects", "updated in the latest week", BLUE)}{_stat(str(c["new"]), "new", "started in the latest week", GREEN)}{_stat(str(c["slipping"]), "slipping", "time left got longer", ACCENT)}{_stat(str(c["quiet"]), "gone quiet", "no update in the latest week", ORANGE)}{_stat(str(c["complete"]), "complete", "marked complete", GREEN)}</div>
 <div class="filters" role="group" aria-label="Show">
 <button type="button" data-f="all" aria-pressed="true">All</button><button type="button" data-f="active" aria-pressed="false">Active</button>
-<button type="button" data-f="slipping" aria-pressed="false">Slipping</button><button type="button" data-f="quiet" aria-pressed="false">Gone quiet</button>
+<button type="button" data-f="slipping" aria-pressed="false">Slipping</button><button type="button" data-f="quiet" aria-pressed="false">Gone quiet</button><button type="button" data-f="complete" aria-pressed="false">Complete</button>
 <select id="who" aria-label="Person"><option value="">Everyone</option>{"".join(f'<option>{escape(n)}</option>' for n in people)}</select></div>"""]
     if not p["projects"]:
         o.append('<p class="empty">No projects sent yet.</p>')
     for i, x in enumerate(p["projects"]):
-        status = "quiet" if x["quietFor"] else "active"
-        if x["quietFor"]:
+        status = "complete" if x["complete"] else "quiet" if x["quietFor"] else "active"
+        if x["complete"]:
+            flag = f'<span class="flag complete">✅ Complete (week ending {escape(nice_date(x["completedOn"]))})</span>'
+        elif x["quietFor"]:
             flag = f'<span class="flag quiet">No update for {_weeks(x["quietFor"])}</span>'
         else:
             flag = {"slipping": '<span class="flag slipping">▲ Slipping: time left got longer</span>',
@@ -687,12 +699,12 @@ def render_projects(p: dict, embed: bool = False) -> str:
                  f'<span>{_weeks(x["weeks"])} of updates</span></div>')
         if x["trail"]:
             o.append('<div class="trail">Time left: ' + " → ".join(f"<b>{escape(t)}</b>" for t in x["trail"]) + "</div>")
-        o.append(f'<details class="tl"{" open" if not x["quietFor"] else ""}><summary>Week by week</summary>')
+        o.append(f'<details class="tl"{" open" if status == "active" else ""}><summary>Week by week</summary>')
         for wk in x["timeline"]:
             o.append(f'<div class="wk"><div class="wk-date">{escape(nice_date(wk["week"])[:-6])}</div><div>')
             for u in wk["entries"]:
                 o.append(f'<div class="wk-entry"><div class="wk-who">{_av(u["name"], pc[u["name"]], "sm")}{escape(u["name"])}'
-                         + (f' <span class="tleft">⏳ {escape(time_left(u["timeLeft"]))}</span>' if u.get("timeLeft") else "")
+                         + (f' <span class="tleft">{escape(tl_badge(u["timeLeft"]))}</span>' if u.get("timeLeft") else "")
                          + (f' <span class="label">{escape(team(u))}</span>' if team(u) and not u.get("solo") else "") + "</div>"
                          + ('<div class="row" style="padding:0;border:0"><div class="body">'
                             + (f'<div class="lh prog">Progress</div><ul>{"".join(f"<li>{escape(s)}</li>" for s in u["progress"])}</ul>' if u.get("progress") else "")
@@ -705,7 +717,7 @@ let f = 'all';
 function apply() {
   const who = document.getElementById('who').value;
   document.querySelectorAll('.proj').forEach(s => {
-    const ok = (f === 'all' || (f === 'active' && s.dataset.status === 'active') || (f === 'quiet' && s.dataset.status === 'quiet')
+    const ok = (f === 'all' || (f === 'active' && s.dataset.status === 'active') || (f === 'quiet' && s.dataset.status === 'quiet') || (f === 'complete' && s.dataset.status === 'complete')
       || (f === 'slipping' && s.dataset.trend === 'slipping' && s.dataset.status === 'active'))
       && (!who || s.dataset.people.split('|').includes(who));
     s.hidden = !ok;
