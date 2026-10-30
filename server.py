@@ -114,7 +114,7 @@ KV_URL = _env_ending("KV_REST_API_URL", "UPSTASH_REDIS_REST_URL").rstrip("/")
 KV_TOKEN = _env_ending("KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_TOKEN")
 ON_VERCEL = bool(os.environ.get("VERCEL"))
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
-KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist", "roadmap")
+KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist", "roadmap", "closed")
 
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
@@ -208,6 +208,7 @@ def load() -> None:
     DATA["todoist"].setdefault("tokens", {})
     DATA["todoist"].setdefault("tasks", {})
     DATA["roadmap"] = read("roadmap.json", [])   # admin only: what's planned, by month; items may come from someone's idea
+    DATA["closed"] = read("closed.json", {})      # projects the admin marked complete: lower name -> {project, on, at, week}
     purge_retired()
 
 
@@ -864,7 +865,8 @@ class Handler(BaseHTTPRequestHandler):
                 picked_up = [it["source"]["idea"] for it in rm_items if earlier and it.get("addedAt", "") > since and not use]
                 prev_week = max((u["week"] for u in DATA["updates"] if u["name"] == name and u["week"] < week), default=None)
                 prev = [u for u in DATA["updates"] if u["name"] == name and u["week"] == prev_week
-                        and u.get("timeLeft") != report.COMPLETE]          # finished projects don't carry over
+                        and u.get("timeLeft") != report.COMPLETE           # finished projects don't carry over,
+                        and not report.closed_out(DATA, u["project"])]      # nor ones the admin marked complete
                 tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == week]
                 prev_tasks = [t for t in DATA["tasks"] if t["name"] == name and t["week"] == prev_week]
                 draft = DATA["drafts"].get(f"{name}|{week}")
@@ -1242,6 +1244,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         if urlsplit(self.path).path == "/api/draft":
             return self.draft("PUT")
+        if urlsplit(self.path).path == "/api/admin/complete":     # mark a project complete, or reopen it
+            if not self.gate("admin"):
+                return
+            body = self.read_json() or {}
+            with LOCK:
+                key = " ".join(str(body.get("project") or "").split()).lower()
+                rows = [u for u in DATA["updates"] if u["project"].lower() == key]
+                if not rows:
+                    return self.send_json(404, {"error": "No project by that name."})
+                before = DATA["closed"]
+                DATA["closed"] = {k: v for k, v in before.items() if k != key}
+                if body.get("complete"):
+                    DATA["closed"][key] = {"project": rows[0]["project"], "on": date.today().isoformat(), "at": now(),
+                                           "week": max(u["week"] for u in rows)}
+                if not write("closed"):
+                    DATA["closed"] = before
+                    return self.unsaved()
+                log_change("update", "closed", before, DATA["closed"])
+                return self.send_json(200, {"projects": report.roadmap_projects(DATA)})
         if urlsplit(self.path).path == "/api/admin/roadmap":
             if not self.gate("admin"):
                 return

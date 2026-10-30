@@ -39,6 +39,16 @@ def idea_key(name: str, idea: str) -> tuple:
     return (str(name).strip().lower(), " ".join(str(idea).split()).lower())
 
 
+def closed_out(data: dict, project: str) -> dict | None:
+    """The admin's 'Mark complete' for a project, while it stands: an update for a later week
+    than the last one before it was marked means the work carried on, so it no longer counts."""
+    c = data.get("closed", {}).get(" ".join(str(project).split()).lower())
+    if not c:
+        return None
+    later = any(u["week"] > c["week"] for u in data.get("updates", []) if u["project"].lower() == str(project).lower())
+    return None if later else c
+
+
 def roadmapped(data: dict) -> set:
     """idea_key of every idea that's been added to the roadmap."""
     return {idea_key(s.get("name", ""), s.get("idea", "")) for it in data.get("roadmap", []) if (s := it.get("source"))}
@@ -628,13 +638,14 @@ def projects(data: dict) -> dict:
             now_r, before_r = soonest[max(soonest)], soonest[sorted(soonest)[-2]]
             trend = "slipping" if now_r > before_r else "moving" if now_r < before_r else "steady"
         gap = (date.fromisoformat(latest) - date.fromisoformat(weeks[0])).days // 7
-        done = any(u.get("timeLeft") == COMPLETE for u in rows if u["week"] == weeks[0])   # marked complete in its last update
+        closed = closed_out(data, last["project"])                                         # the admin marked it complete
+        done = bool(closed) or any(u.get("timeLeft") == COMPLETE for u in rows if u["week"] == weeks[0])   # or its last update did
         out.append({
             "project": last["project"], "type": last["type"],
             "people": sorted({u["name"] for u in rows}),
             "first": weeks[-1], "last": weeks[0], "weeks": len(weeks),
             "quietFor": 0 if done else gap,          # weeks since its last update (0 = updated in the latest week)
-            "complete": done, "completedOn": weeks[0] if done else None,
+            "complete": done, "completedOn": closed["on"] if closed else weeks[0] if done else None, "closed": bool(closed),
             "trend": trend, "trail": [t for i, t in enumerate(trail) if i == 0 or t != trail[i - 1]],
             "timeline": [{"week": w, "entries": sorted((u for u in rows if u["week"] == w), key=lambda u: u["name"])}
                          for w in weeks],
@@ -673,7 +684,7 @@ def roadmap_projects(data: dict) -> list:
         out.append({"project": x["project"], "type": x["type"], "people": x["people"], "last": x["last"],
                     "start": (date.fromisoformat(x["first"]) - timedelta(days=6)).isoformat(), "finish": finish,   # the week it was first sent
                     "timeLeft": tl, "month": month, "bucket": bucket, "quietFor": x["quietFor"],
-                    "status": "Done" if x["complete"] else "In progress"})
+                    "status": "Done" if x["complete"] else "In progress", "closed": x["closed"]})
     return out
 
 
@@ -729,7 +740,8 @@ def render_projects(p: dict, embed: bool = False) -> str:
     for i, x in enumerate(p["projects"]):
         status = "complete" if x["complete"] else "quiet" if x["quietFor"] else "active"
         if x["complete"]:
-            flag = f'<span class="flag complete">✅ Complete (week ending {escape(nice_date(x["completedOn"]))})</span>'
+            flag = (f'<span class="flag complete">✅ Marked complete {escape(nice_date(x["completedOn"]))}</span>' if x["closed"] else
+                    f'<span class="flag complete">✅ Complete (week ending {escape(nice_date(x["completedOn"]))})</span>')
         elif x["quietFor"]:
             flag = f'<span class="flag quiet">No update for {_weeks(x["quietFor"])}</span>'
         else:

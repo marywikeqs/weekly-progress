@@ -42,6 +42,11 @@ h2{font-size:15px;margin:38px 0 0;padding-bottom:6px;border-bottom:1px solid var
 .lab{padding:7px 12px;border-right:1px solid var(--edge);min-width:0;background:var(--bg);position:sticky;left:0;z-index:2}
 .lab a,.lab b{display:block;font-weight:600;font-size:13.5px;color:var(--ink);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lab a:hover{text-decoration:underline}
+.lab.p{padding-right:34px}
+.mark{position:absolute;right:6px;top:8px;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--edge);background:var(--bg);color:var(--faint);
+  font-size:12px;line-height:20px;text-align:center;cursor:pointer;padding:0}
+.mark:hover{border-color:var(--done);color:var(--done)}
+.mark.is{border-color:var(--done);background:var(--done);color:#fff}.mark.is:hover{background:var(--bg);color:var(--muted);border-color:var(--faint)}
 .lab small{display:block;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .track{position:relative;background-image:linear-gradient(to right,var(--line) 1px,transparent 1px);background-size:calc(100% / var(--cols)) 100%}
 .head{position:sticky;top:0;z-index:3;background:var(--side);border-bottom:1px solid var(--edge);min-height:0}
@@ -110,7 +115,7 @@ button.ghost:hover{background:var(--hover)}
 </aside>
 <main>
   <h1 id="timeline">Roadmap</h1>
-  <p class="sub">Each project runs from the week it was first sent to when it should finish, going by its latest Time left. Planned items sit in their month.</p>
+  <p class="sub">Each project runs from the week it was first sent to when it should finish, going by its latest Time left. Planned items sit in their month. Click ✓ beside a project to mark it complete.</p>
   <div class="bar">
     <div class="views" role="group" aria-label="Zoom"><button type="button" data-v="quarter" aria-pressed="true">By quarter</button><button type="button" data-v="month" aria-pressed="false">By month</button></div>
     <div class="views" role="group" aria-label="Show"><button type="button" data-s="all" aria-pressed="true">Everything</button><button type="button" data-s="projects" aria-pressed="false">Projects</button><button type="button" data-s="items" aria-pressed="false">Planned items</button></div>
@@ -163,7 +168,7 @@ function range() {
 }
 
 function projectMeta(p) {
-  const when = p.status === 'Done' ? `✅ Complete ${fmtDay(p.finish)}` : p.bucket === 'ongoing' ? 'Ongoing'
+  const when = p.closed ? `✅ Marked complete ${fmtDay(p.finish)}` : p.status === 'Done' ? `✅ Complete ${fmtDay(p.finish)}` : p.bucket === 'ongoing' ? 'Ongoing'
     : p.bucket === 'later' ? `3+ months left as of ${fmtDay(p.last)}` : `${p.timeLeft} left as of ${fmtDay(p.last)}`;
   return [p.people.join(', '), when, p.quietFor ? `no update for ${p.quietFor} wk${p.quietFor === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
 }
@@ -189,7 +194,7 @@ function renderTimeline() {
     return `<a class="b ${k}" style="left:${l}%;width:max(${w}%,8px);--c:${colour}" title="${esc(title)}" ${attrs}>${inside ? esc(text) : ''}</a>`
       + (inside ? '' : `<span class="bl" style="left:calc(max(${w}%,8px) + ${l}%)">${esc(text)}</span>`);
   };
-  const row = (label, sub, href, track, data) => `<div class="tl-row" style="--cols:${r.cols}"${data || ''}><div class="lab">${href ? `<a href="${href}">${esc(label)}</a>` : `<b>${esc(label)}</b>`}<small>${esc(sub)}</small></div><div class="track">${track}</div></div>`;
+  const row = (label, sub, href, track, btn) => `<div class="tl-row" style="--cols:${r.cols}"><div class="lab${btn ? ' p' : ''}">${href ? `<a href="${href}">${esc(label)}</a>` : `<b>${esc(label)}</b>`}<small>${esc(sub)}</small>${btn || ''}</div><div class="track">${track}</div></div>`;
 
   // lane 1: the team's projects (an item with a project's name stands in for it, in lane 2)
   if (show !== 'items') {
@@ -201,7 +206,10 @@ function renderTimeline() {
       const colour = p.type === 'Claude' ? 'var(--accent)' : 'var(--teal)';
       const open = !p.finish, cls = (open ? 'open' : '') + (p.status === 'Done' ? ' done' : '') + (p.quietFor ? ' quiet' : '');
       const text = p.status === 'Done' ? `✓ Complete ${fmtDay(p.finish)}` : p.bucket === 'ongoing' ? 'Ongoing' : p.bucket === 'later' ? '3+ months →' : `est. ${fmtDay(p.finish)}`;
-      o.push(row(p.project, projectMeta(p), '/projects', bar(mu(p.start), open ? null : mu(p.finish), cls, colour, text, `${p.project}: ${projectMeta(p)}`, 'href="/projects"')));
+      // the admin can mark a project complete (or reopen one they marked); one finished on the form stays as sent
+      const btn = p.closed ? `<button class="mark is" type="button" data-done="${esc(p.project)}" data-to="0" title="Marked complete. Click to reopen" aria-label="Reopen ${esc(p.project)}">✓</button>`
+        : p.status === 'Done' ? '' : `<button class="mark" type="button" data-done="${esc(p.project)}" data-to="1" title="Mark complete" aria-label="Mark ${esc(p.project)} complete">✓</button>`;
+      o.push(row(p.project, projectMeta(p), '/projects', bar(mu(p.start), open ? null : mu(p.finish), cls, colour, text, `${p.project}: ${projectMeta(p)}`, 'href="/projects"'), btn));
     });
   }
   // lane 2: planned items, each in its month
@@ -225,6 +233,17 @@ function renderTimeline() {
   const t = pos(mu(todayIso));
   o.push(`<div class="today" style="left:calc(230px + (100% - 230px) * ${t / 100})"><span>Today</span></div>`);
   $('tl').innerHTML = o.join('');
+  $('tl').querySelectorAll('[data-done]').forEach(b => b.onclick = async () => {
+    b.disabled = true; status(b.dataset.to === '1' ? 'Marking complete…' : 'Reopening…');
+    try {
+      const r = await fetch('/api/admin/complete', {method: 'PUT', headers: {'Content-Type': 'application/json'},
+                                                    body: JSON.stringify({project: b.dataset.done, complete: b.dataset.to === '1'})});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      projects = d.projects; renderTimeline(); renderList();
+      status(b.dataset.to === '1' ? `${b.dataset.done} marked complete` : `${b.dataset.done} reopened`, 'ok');
+    } catch (e) { b.disabled = false; status('Not changed: ' + e.message, 'err'); }
+  });
   $('tl').querySelectorAll('[data-go]').forEach(el => el.onclick = e => {
     e.preventDefault();
     const row = $('list').querySelector(`[data-row="${el.dataset.go}"]`);

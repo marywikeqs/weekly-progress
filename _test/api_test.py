@@ -668,6 +668,26 @@ def run():
     check("[On the roadmap]" in txt.decode(), "...and the Slack text")
     call("PUT", "/api/admin/roadmap", {"roadmap": []}, auth=ADMIN)
 
+    print("admin marks a project complete")
+    mark = lambda project, done, **kw: call("PUT", "/api/admin/complete", {"project": project, "complete": done}, **kw)
+    check(mark("Commission Audit Tool", True)[0] == 401, "only the admin can mark a project complete")
+    check(mark("No Such Project", True, auth=ADMIN)[0] == 404, "an unknown project is refused")
+    carried = lambda: [u["project"] for u in call("GET", f"/api/mine?name=Avery%20Test&week={w2}")[1]["lastProjects"]]
+    check("Commission Audit Tool" in carried(), "before: the project carries into next week")
+    s, d = mark("commission audit tool", True, auth=ADMIN)
+    cat_p = next(x for x in d["projects"] if x["project"] == "Commission Audit Tool")
+    check(s == 200 and cat_p["closed"] and cat_p["status"] == "Done", "marked complete: Done on the roadmap")
+    check("Commission Audit Tool" not in carried(), "...and it no longer carries over on the form")
+    s, ph = call("GET", "/projects", auth=ADMIN, raw=True)
+    check("✅ Marked complete" in ph.decode(), "...and Projects over time shows it complete")
+    s, d = mark("Commission Audit Tool", False, auth=ADMIN)
+    check(not next(x for x in d["projects"] if x["project"] == "Commission Audit Tool")["closed"] and "Commission Audit Tool" in carried(), "reopen undoes it")
+    fake2 = {"updates": [{"name": "A", "week": "2026-10-09", "project": "Q", "type": "Claude", "timeLeft": "1–2 weeks"}],
+             "closed": {"q": {"project": "Q", "on": "2026-10-12", "at": "", "week": "2026-10-09"}}}
+    check(rp.closed_out(fake2, "Q") and rp.projects(fake2)["projects"][0]["complete"], "a project the admin marked complete counts as complete")
+    fake2["updates"].append({"name": "A", "week": "2026-10-16", "project": "q", "type": "Claude", "timeLeft": "1–2 weeks"})
+    check(not rp.closed_out(fake2, "Q") and not rp.projects(fake2)["projects"][0]["complete"], "an update for a later week reopens it")
+
     print("persistence")
     if KV:
         check(not (OUT / "state").exists(), "nothing written to disk")
@@ -675,7 +695,7 @@ def run():
               and kv("LLEN", "wp:changes") > 0, "everything is in Redis, with the change log")
         return
     files = sorted(p.name for p in (OUT / "state").iterdir())
-    check(files == ["changes.jsonl", "config.json", "drafts.json", "roadmap.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")
+    check(files == ["changes.jsonl", "closed.json", "config.json", "drafts.json", "roadmap.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")
 
 
 if __name__ == "__main__":

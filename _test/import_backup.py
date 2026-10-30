@@ -14,7 +14,7 @@ import urllib.request
 
 URL = os.environ["KV_REST_API_URL"].rstrip("/")
 TOKEN = os.environ["KV_REST_API_TOKEN"]
-KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist", "roadmap")
+KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist", "roadmap", "closed")
 
 
 def kv(*cmd):
@@ -32,6 +32,7 @@ def main():
         sys.exit(__doc__)
     data = json.loads(open(args[0], encoding="utf-8").read())
     data.setdefault("roadmap", [])      # backups from before the roadmap
+    data.setdefault("closed", {})
     missing = [k for k in KEYS if k not in data]
     if missing:
         sys.exit(f"Not a Weekly Progress backup (missing {', '.join(missing)}).")
