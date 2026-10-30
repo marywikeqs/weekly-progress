@@ -30,6 +30,20 @@ def fit_text(u: dict) -> str:
 
 # "Complete" closes the project out: no next steps needed, and it doesn't carry into the next week
 COMPLETE = "Complete"
+# the admin roadmap: each item is planned for a month (or unscheduled); one may come from someone's idea
+ROADMAP_STATUS = ["Planned", "In progress", "Done"]
+
+
+def idea_key(name: str, idea: str) -> tuple:
+    """Who had the idea and what it is, matched loosely (case and spacing)."""
+    return (str(name).strip().lower(), " ".join(str(idea).split()).lower())
+
+
+def roadmapped(data: dict) -> set:
+    """idea_key of every idea that's been added to the roadmap."""
+    return {idea_key(s.get("name", ""), s.get("idea", "")) for it in data.get("roadmap", []) if (s := it.get("source"))}
+
+
 TIME_LEFT = ["1–2 days", "3–5 days", "1–2 weeks", "2–4 weeks", "1–3 months", "3+ months", "Ongoing / no end date", COMPLETE]
 FLAG_AT = 80  # percent of budget
 
@@ -172,7 +186,9 @@ def build(data: dict, week: str) -> dict:
     # tweaks: small changes to existing projects or tools, by person
     tweaks = [{"name": u["name"], **t} for u in sorted(cur["usage"], key=lambda u: u["name"]) for t in u.get("tweaks", [])]
     # upcoming project ideas, by person
-    ideas = [{"name": u["name"], **i} for u in sorted(cur["usage"], key=lambda u: u["name"]) for i in u.get("ideas", [])]
+    rm = roadmapped(data)
+    ideas = [{"name": u["name"], **i, "roadmap": idea_key(u["name"], i["idea"]) in rm}
+             for u in sorted(cur["usage"], key=lambda u: u["name"]) for i in u.get("ideas", [])]
 
     # other work, grouped by kind
     other: dict = {}
@@ -248,6 +264,7 @@ def render_text(r: dict, base_url: str = "") -> str:
     if r["ideas"]:
         lines.append("*Upcoming project ideas:*")
         lines += [f"   • {i['name']}: {i['idea']}" + (f" [{IDEA_STATUS[i['status']]}]" if i.get("status") in IDEA_STATUS else "")
+                  + (" [On the roadmap]" if i.get("roadmap") else "")
                   + (f" — {i['why']}" if i["why"] else "") for i in r["ideas"]]
     if c["budget"]:
         lines.append(f"*Spend:* {money(c['spend'])} of {money(c['budget'])} monthly budget ({100 * c['spend'] / c['budget']:.0f}%)"
@@ -524,6 +541,7 @@ def render_html(r: dict, weeks: list, embed: bool = False) -> str:
         o.append('<ul class="ideas">' + "".join(
             f'<li>{_av(i["name"], pc.get(i["name"], BLUE), "sm")}<div><strong>{escape(i["idea"])}</strong> <span class="label">{escape(i["name"])}</span>'
             + (" " + _pill(IDEA_STATUS[i["status"]], {"start": GREEN, "idea": "#868e96"}.get(i["status"], BLUE)) if i.get("status") in IDEA_STATUS else "")
+            + (" " + _pill("🗺 On the roadmap", GRAPE) if i.get("roadmap") else "")
             + (f'<div class="why">{escape(i["why"])}</div>' if i["why"] else "") + "</div></li>" for i in r["ideas"]) + "</ul>")
     else:
         o.append('<p class="empty">No new ideas this week.</p>')

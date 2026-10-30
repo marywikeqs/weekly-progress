@@ -139,6 +139,7 @@ button:disabled{opacity:.6;cursor:default}
     <div class="card">
       <div id="ideas"></div>
       <p id="ideas-empty">Nothing added.</p>
+      <p id="ideas-picked" class="hint" hidden></p>
       <button type="button" class="add-line" id="add-idea">+ Add an idea</button>
     </div>
 
@@ -311,6 +312,7 @@ async function load() {
   $('ideas').innerHTML = '';
   (MINE.usage ? MINE.usage.ideas || [] : MINE.lastIdeas || []).forEach(x => addIdea(x));   // ideas carry over until removed
   ideasEmpty();
+  pickedUp();
   fillUsage();
   todoShow();
   $('send').textContent = MINE.updates.length || MINE.usage ? 'Send updated version' : 'Send weekly update';
@@ -350,6 +352,7 @@ function applyForm(f) {
   }
   ideas.forEach(x => addIdea(x));
   ideasEmpty();
+  pickedUp();
   $('spend').value = f.spend ?? ''; $('budget').value = f.budget ?? '';
   if (!MINE.usage) $('shot-state').textContent = "Drafts don't keep the screenshot. Attach it before you send.";
 }
@@ -680,6 +683,12 @@ function addIdea(x = {}) {
   return el;
 }
 let ideaSeq = 0;
+// ideas of theirs added to the roadmap since their last send: said once, and they no longer carry over
+function pickedUp() {
+  const p = MINE.roadmapped || [];
+  $('ideas-picked').hidden = !p.length;
+  $('ideas-picked').textContent = p.length ? `🗺 Added to the roadmap since your last send: ${p.join(', ')}. ${p.length === 1 ? "It's" : "They're"} off your list now.` : '';
+}
 function ideasEmpty() { $('ideas-empty').hidden = !!$('ideas').children.length; }
 const readIdea = el => ({idea: el.querySelector('.i-idea').value.trim(), why: el.querySelector('.i-why').value.trim(),
                          status: el.querySelector('.i-status input:checked')?.value || null});

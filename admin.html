@@ -57,6 +57,22 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
 .digest-bar .live{flex:1;min-width:200px;font-size:12.5px;color:var(--muted)}
 .digest-bar .live b{color:var(--done);font-weight:600}
 #digest-frame,#proj-frame{display:block;width:100%;height:600px;border:0;margin-top:12px}
+.views{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
+.views button{font:inherit;font-size:13px;padding:5px 12px;border:0;background:var(--bg);color:var(--muted);cursor:pointer}
+.views button[aria-pressed=true]{background:var(--ink);color:#fff}
+.rm-group{margin-top:18px}
+.rm-group h3{font-size:13.5px;margin:0 0 2px;display:flex;gap:8px;align-items:baseline}
+.rm-group h3 small{font-weight:400;color:var(--muted);font-size:12px}
+.rm{border-bottom:1px solid var(--line);padding:6px 0}
+.rm .item{border:0;padding:0}
+.rm .item:not(.off) .ring{border-color:var(--faint)}.rm.s-progress .item .ring{border-color:#4073ff}.rm.s-done .item .ring{border-color:var(--done);background:var(--done)}
+.rm.s-done .rm-title{color:var(--muted);text-decoration:line-through}
+.rm input[type=month]{font:inherit;font-size:12.5px;padding:3px 6px;border:1px solid var(--edge);border-radius:5px;color:var(--muted)}
+.rm .rm-owner{flex:0 0 150px}
+.rm .rm-notes{display:block;width:calc(100% - 26px);margin:0 0 2px 26px;border:0;padding:3px 2px;font-size:12.5px;color:var(--muted);background:transparent}
+.rm .rm-notes:focus{background:var(--hover);box-shadow:none}
+.rm .from{margin-left:26px;font-size:12px;color:var(--muted)}
+.idea-on{font-size:12.5px;color:var(--done);white-space:nowrap}
 [hidden]{display:none!important}
 @media (max-width:760px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .app{margin:0 10px 0 4px;width:100%}aside .sep{display:none}main{padding:20px 16px 110px}.bar{left:0;padding:12px 16px}.item{flex-wrap:wrap}}
@@ -70,7 +86,7 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
   <a href="/projects">Projects over time</a>
   <a href="/">The form</a>
   <div class="sep"></div>
-  <a href="#digest">Digest</a><a href="#projects-over-time">Projects over time</a><a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#todoist">Todoist</a><a href="#sends">Sends</a>
+  <a href="#digest">Digest</a><a href="#roadmap">Roadmap</a><a href="#ideas">Ideas</a><a href="#projects-over-time">Projects over time</a><a href="#roster">Roster</a><a href="#email">Report email</a><a href="#projects">Projects</a><a href="#other">Other work</a><a href="#howto">Screenshot instructions</a><a href="#todoist">Todoist</a><a href="#sends">Sends</a>
   <div class="sep"></div>
   <a href="/export/updates.csv">All project updates (CSV)</a><a href="/export/tasks.csv">All other work (CSV)</a><a href="/export/usage.csv">All usage (CSV)</a>
 </aside>
@@ -88,6 +104,22 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
     <button class="ghost" type="button" id="digest-open">Open full screen</button>
   </div>
   <iframe id="digest-frame" title="Weekly digest"></iframe>
+
+  <h2 id="roadmap">Roadmap</h2>
+  <p class="hint">What's planned and when. Only admins see it. Give each item a month, or leave it unscheduled; saves with Save changes below.</p>
+  <div class="digest-bar">
+    <div class="views" role="group" aria-label="Group by"><button type="button" data-rv="quarter" aria-pressed="true">By quarter</button><button type="button" data-rv="month" aria-pressed="false">By month</button></div>
+    <span class="live" id="rm-count"></span>
+  </div>
+  <div id="rm-list"></div>
+  <p class="hint" id="rm-empty" hidden>Nothing on the roadmap yet. Add an item, or add one of the team's ideas below.</p>
+  <button class="add" id="add-rm"><span>+</span>Add roadmap item</button>
+  <datalist id="rm-people"></datalist>
+
+  <h2 id="ideas">Ideas from the team</h2>
+  <p class="hint">Every upcoming project idea anyone has sent, newest first. Add to roadmap puts it on the roadmap above. Once it's saved there, the idea stops carrying over on that person's form, and their next form tells them it was added. The weekly report and email mark it 🗺 On the roadmap.</p>
+  <ul class="learned" id="idea-list"></ul>
+  <p class="hint" id="ideas-none" hidden>No ideas sent yet.</p>
 
   <h2 id="projects-over-time">Projects over time</h2>
   <p class="hint">Every project across all weeks: who's on it, each week's progress and next steps, and how Time left has moved. Slipping = the time left got longer since the last update; gone quiet = nobody updated it in the latest week (finished, paused or forgotten).</p>
@@ -143,6 +175,7 @@ button.primary:hover{background:var(--accent-hover)}button:disabled{opacity:.55}
 <script>
 const $ = id => document.getElementById(id);
 let state = null, learned = [], email = null, dirty = false;
+let roadmap = [], ideas = [], rmStatus = ['Planned', 'In progress', 'Done'], rmDirty = false, rmView = 'quarter';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 function setStatus(t, cls) { $('status').textContent = t; $('status').className = 'status ' + (cls || ''); }
 function touch() { dirty = true; setStatus('Unsaved changes'); }
@@ -151,9 +184,10 @@ const fmtWeek = s => new Date(s + 'T12:00').toLocaleDateString(undefined, {weekd
 async function load() {
   const d = await (await fetch('/api/admin')).json();
   state = d.config; learned = d.learned; email = d.email;
+  roadmap = d.roadmap || []; ideas = d.ideas || []; rmStatus = d.roadmapStatus || rmStatus;
   $('howto-text').value = state.screenshotInstructions || '';
   $('report-email').value = state.reportEmail || '';
-  render(); renderEmail(); renderSends(d.sends || []); renderTodoist(d.todoist || {}); renderDigest(d);
+  render(); renderRoadmap(); renderEmail(); renderSends(d.sends || []); renderTodoist(d.todoist || {}); renderDigest(d);
   if (!d.writable) setStatus('The server can\'t save: its storage isn\'t writable', 'err');
   else if (!d.persistent) setStatus('No volume attached: everything resets on the next deploy', 'err');
   else setStatus('All changes saved');
@@ -303,20 +337,89 @@ $('digest-open').onclick = () => open(`/report?week=${$('digest-week').value}`, 
 setInterval(() => { if (!document.hidden) checkDigest(false); }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDigest(false); });
 
+// ---- Roadmap: items by quarter or month, some from the team's ideas ----
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const ideaKey = (name, idea) => String(name).trim().toLowerCase() + '|' + String(idea).split(/\s+/).filter(Boolean).join(' ').toLowerCase();
+function rmGroup(m) {
+  if (!m) return ['~', 'Unscheduled', ''];
+  const [y, mo] = m.split('-').map(Number);
+  if (rmView === 'month') return [m, `${MONTHS[mo - 1]} ${y}`, ''];
+  const q = Math.ceil(mo / 3);
+  return [`${y}-Q${q}`, `Q${q} ${y}`, `${MONTHS[q * 3 - 3].slice(0, 3)}–${MONTHS[q * 3 - 1].slice(0, 3)}`];
+}
+function rmTouch() { rmDirty = true; setStatus('Unsaved changes'); }
+function renderRoadmap() {
+  const groups = {};
+  roadmap.forEach((it, i) => { const [k, label, sub] = rmGroup(it.month); (groups[k] = groups[k] || {label, sub, rows: []}).rows.push(i); });
+  const cls = s => s === 'Done' ? ' s-done' : s === 'In progress' ? ' s-progress' : '';
+  $('rm-list').innerHTML = Object.keys(groups).sort().map(k => { const g = groups[k]; return `<div class="rm-group"><h3>${esc(g.label)}${g.sub ? ` <small>${esc(g.sub)}</small>` : ''} <small>· ${g.rows.length}</small></h3>`
+    + g.rows.map(i => { const it = roadmap[i]; return `<div class="rm${cls(it.status)}"><div class="item"><span class="ring"></span>
+      <input type="text" class="rm-title" value="${esc(it.title)}" data-rt="${i}" aria-label="Roadmap item" placeholder="What's planned">
+      <input type="text" class="rm-owner" value="${esc(it.owner)}" data-ro="${i}" list="rm-people" aria-label="Owner" placeholder="Owner">
+      <input type="month" value="${esc(it.month)}" data-rm="${i}" aria-label="Month">
+      <select data-rs="${i}" aria-label="Status">${rmStatus.map(s => `<option${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>
+      <button class="x" data-rx2="${i}" title="Take off the roadmap" aria-label="Remove">×</button></div>
+      <input type="text" class="rm-notes" value="${esc(it.notes)}" data-rn="${i}" aria-label="Notes" placeholder="Notes">
+      ${it.source ? `<div class="from">💡 From ${esc(it.source.name)}'s idea</div>` : ''}</div>`; }).join('') + '</div>'; }).join('');
+  $('rm-empty').hidden = roadmap.length > 0;
+  const done = roadmap.filter(it => it.status === 'Done').length;
+  $('rm-count').textContent = roadmap.length ? `${roadmap.length} item${roadmap.length === 1 ? '' : 's'} · ${done} done` : '';
+  $('rm-people').innerHTML = state.roster.filter(p => p.name).map(p => `<option value="${esc(p.name)}">`).join('');
+  document.querySelectorAll('[data-rt]').forEach(el => el.oninput = () => { roadmap[el.dataset.rt].title = el.value; rmTouch(); });
+  document.querySelectorAll('[data-ro]').forEach(el => el.oninput = () => { roadmap[el.dataset.ro].owner = el.value; rmTouch(); });
+  document.querySelectorAll('[data-rn]').forEach(el => el.oninput = () => { roadmap[el.dataset.rn].notes = el.value; rmTouch(); });
+  document.querySelectorAll('[data-rm]').forEach(el => el.onchange = () => { roadmap[el.dataset.rm].month = el.value; rmTouch(); renderRoadmap(); });
+  document.querySelectorAll('[data-rs]').forEach(el => el.onchange = () => { roadmap[el.dataset.rs].status = el.value; rmTouch(); renderRoadmap(); });
+  document.querySelectorAll('[data-rx2]').forEach(el => el.onclick = () => { roadmap.splice(+el.dataset.rx2, 1); rmTouch(); renderRoadmap(); });
+  renderIdeas();
+}
+function renderIdeas() {
+  const on = new Set(roadmap.filter(it => it.source).map(it => ideaKey(it.source.name, it.source.idea)));
+  const label = {start: 'Need a greenlight', discuss: "Let's discuss", idea: 'Just an idea'};
+  $('ideas-none').hidden = ideas.length > 0;
+  $('idea-list').innerHTML = ideas.map((x, i) => `<li><div class="grow"><strong>${esc(x.idea)}</strong> · ${esc(x.name)}
+    <small>${x.status in label ? esc(label[x.status]) + ' · ' : ''}${x.first === x.last ? `week ending ${esc(fmtWeek(x.last))}` : `weeks ending ${esc(fmtWeek(x.first))} – ${esc(fmtWeek(x.last))}`}${x.why ? ' · ' + esc(x.why) : ''}</small></div>
+    ${on.has(ideaKey(x.name, x.idea)) ? '<span class="idea-on">🗺 On the roadmap</span>' : `<button class="ghost" type="button" data-iadd="${i}">Add to roadmap</button>`}</li>`).join('');
+  document.querySelectorAll('[data-iadd]').forEach(b => b.onclick = () => {
+    const x = ideas[b.dataset.iadd];
+    roadmap.push({id: '', title: x.idea, owner: x.name, month: '', status: rmStatus[0], notes: x.why || '', source: {name: x.name, idea: x.idea}});
+    rmTouch(); renderRoadmap();
+    setStatus(`Added “${x.idea}” to the roadmap (Unscheduled). Save changes to keep it.`);
+  });
+}
+document.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => {
+  rmView = b.dataset.rv;
+  document.querySelectorAll('[data-rv]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  renderRoadmap();
+});
+$('add-rm').onclick = () => {
+  roadmap.push({id: '', title: '', owner: '', month: '', status: rmStatus[0], notes: '', source: null}); rmTouch(); renderRoadmap();
+  const ins = $('rm-list').querySelectorAll('.rm-title'); ins[ins.length - 1].focus();
+};
+
 $('howto-text').oninput = () => { state.screenshotInstructions = $('howto-text').value; touch(); };
 $('report-email').oninput = () => { state.reportEmail = $('report-email').value; touch(); };
 $('save').onclick = async () => {
   $('save').disabled = true; setStatus('Saving…');
   try {
-    const r = await fetch('/api/admin/config', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(state)});
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.status);
-    state = d.config; dirty = false; render(); setStatus('All changes saved', 'ok');
+    if (rmDirty) {
+      const r = await fetch('/api/admin/roadmap', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({roadmap})});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      roadmap = d.roadmap; ideas = d.ideas; rmDirty = false; renderRoadmap();
+    }
+    if (dirty) {
+      const r = await fetch('/api/admin/config', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(state)});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      state = d.config; dirty = false; render();
+    }
+    setStatus('All changes saved', 'ok');
   } catch (e) { setStatus('Not saved: ' + e.message, 'err'); }
   $('save').disabled = false;
 };
 $('test-email').onclick = async () => {
-  if (dirty) { setStatus('Save your changes first, then send the test.', 'err'); return; }
+  if (dirty || rmDirty) { setStatus('Save your changes first, then send the test.', 'err'); return; }
   const b = $('test-email'); b.disabled = true; b.textContent = 'Sending…';
   try {
     const r = await fetch('/api/admin/test-email', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
@@ -326,7 +429,7 @@ $('test-email').onclick = async () => {
   } catch (e) { $('email-status').textContent = 'Test failed: ' + e.message; $('email-status').className = 'status-line err'; }
   b.disabled = false; b.textContent = 'Send a test email';
 };
-addEventListener('beforeunload', e => { if (dirty) e.preventDefault(); });
+addEventListener('beforeunload', e => { if (dirty || rmDirty) e.preventDefault(); });
 load().catch(e => setStatus('Couldn\'t load: ' + e.message, 'err'));
 </script>
 </body>

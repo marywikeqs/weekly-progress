@@ -114,7 +114,7 @@ KV_URL = _env_ending("KV_REST_API_URL", "UPSTASH_REDIS_REST_URL").rstrip("/")
 KV_TOKEN = _env_ending("KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_TOKEN")
 ON_VERCEL = bool(os.environ.get("VERCEL"))
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
-KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist")
+KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist", "roadmap")
 
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
@@ -207,6 +207,7 @@ def load() -> None:
     DATA["todoist"] = read("todoist.json", {})
     DATA["todoist"].setdefault("tokens", {})
     DATA["todoist"].setdefault("tasks", {})
+    DATA["roadmap"] = read("roadmap.json", [])   # admin only: what's planned, by month; items may come from someone's idea
     purge_retired()
 
 
@@ -404,20 +405,63 @@ def clean_update(d: dict) -> dict | str:
     return out
 
 
-def carried_ideas(earlier: list) -> list:
+def carried_ideas(earlier: list, skip: set = frozenset()) -> list:
     """Upcoming project ideas for a new week, from a person's earlier sends (oldest first). A send made
     since ideas carried over holds the full list (anything missing was removed); older sends add theirs.
-    The newest wording of each idea wins."""
+    The newest wording of each idea wins. Ideas in skip (on the roadmap) have been picked up, so they stop."""
     out: dict = {}
     for u in earlier:
         if u.get("ideasCarried"):
             out = {}
         for x in u.get("ideas") or []:
-            key = x.get("idea", "").strip().lower()
+            key = " ".join(x.get("idea", "").split()).lower()
             if key:
                 out.pop(key, None)
                 out[key] = x
-    return list(out.values())
+    return [x for k, x in out.items() if k not in skip]
+
+
+def all_ideas() -> list:
+    """Every idea anyone has sent, once per person (newest wording), newest first, with its roadmap item if any."""
+    on = {report.idea_key(it["source"]["name"], it["source"]["idea"]): it["id"] for it in DATA["roadmap"] if it.get("source")}
+    seen: dict = {}
+    for u in sorted(DATA["usage"], key=lambda u: u["week"]):
+        for x in u.get("ideas") or []:
+            k = report.idea_key(u["name"], x.get("idea", ""))
+            if k[1]:
+                first = seen.get(k, {}).get("first", u["week"])
+                seen[k] = {"name": u["name"], "idea": x["idea"], "why": x.get("why", ""), "status": x.get("status"),
+                           "first": first, "last": u["week"], "roadmap": on.get(k)}
+    return sorted(seen.values(), key=lambda i: (i["last"], i["first"]), reverse=True)
+
+
+def clean_roadmap(items) -> list | str:
+    """The admin's roadmap as sent from the admin page, checked; or what's wrong with it."""
+    if not isinstance(items, list):
+        return "The roadmap should be a list."
+    out, ids = [], set()
+    for x in items[:300]:
+        x = x if isinstance(x, dict) else {}
+        title = re.sub(r"\s+", " ", str(x.get("title") or "")).strip()[:150]
+        if not title:
+            return "Every roadmap item needs a name."
+        month = str(x.get("month") or "")
+        if month and not re.fullmatch(r"20\d\d-(0[1-9]|1[0-2])", month):
+            return f"'{title}': pick a month, or leave it unscheduled."
+        status = x.get("status") if x.get("status") in report.ROADMAP_STATUS else report.ROADMAP_STATUS[0]
+        rid = str(x.get("id") or "")[:20]
+        if not re.fullmatch(r"[a-z0-9]{6,20}", rid) or rid in ids:
+            rid = secrets.token_hex(5)
+        ids.add(rid)
+        src = x.get("source")
+        if isinstance(src, dict) and str(src.get("name") or "").strip() and str(src.get("idea") or "").strip():
+            src = {"name": str(src["name"]).strip()[:80], "idea": str(src["idea"]).strip()[:120]}
+        else:
+            src = None
+        out.append({"id": rid, "title": title, "owner": re.sub(r"\s+", " ", str(x.get("owner") or "")).strip()[:80],
+                    "month": month, "status": status, "notes": str(x.get("notes") or "").strip()[:1000], "source": src,
+                    "addedAt": str(x.get("addedAt") or "")[:40] or now()})
+    return out
 
 
 def task_categories() -> list:
@@ -813,6 +857,11 @@ class Handler(BaseHTTPRequestHandler):
                 ups = [u for u in DATA["updates"] if u["name"] == name and u["week"] == week]
                 use = next((u for u in DATA["usage"] if u["name"] == name and u["week"] == week), None)
                 earlier = sorted((u for u in DATA["usage"] if u["name"] == name and u["week"] < week), key=lambda u: u["week"])
+                # ideas of theirs on the roadmap stop carrying over; ones picked up since their last send are shown once
+                rm_items = [it for it in DATA["roadmap"] if it.get("source") and report.idea_key(it["source"]["name"], "")[0] == name.lower()]
+                mine_rm = {report.idea_key(name, it["source"]["idea"])[1] for it in rm_items}
+                since = (earlier[-1].get("updatedAt") or earlier[-1].get("submittedAt") or "") if earlier else ""
+                picked_up = [it["source"]["idea"] for it in rm_items if earlier and it.get("addedAt", "") > since and not use]
                 prev_week = max((u["week"] for u in DATA["updates"] if u["name"] == name and u["week"] < week), default=None)
                 prev = [u for u in DATA["updates"] if u["name"] == name and u["week"] == prev_week
                         and u.get("timeLeft") != report.COMPLETE]          # finished projects don't carry over
@@ -833,7 +882,8 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             return self.send_json(200, {"updates": ups, "usage": use, "tasks": tasks,
                                         "lastBudget": earlier[-1]["budget"] if earlier else None,
-                                        "lastIdeas": carried_ideas(earlier),
+                                        "lastIdeas": carried_ideas(earlier, mine_rm),
+                                        "roadmapped": picked_up,
                                         "lastWeek": prev_week, "lastProjects": prev, "lastTasks": prev_tasks, "draft": draft, "todoist": linked,
                                         "todoistDone": done})
 
@@ -864,6 +914,7 @@ class Handler(BaseHTTPRequestHandler):
                         o["at"] = max(o["at"], x.get("updatedAt") or x.get("submittedAt") or "")
                 sends = sorted(sends.values(), key=lambda o: (o["week"], o["at"]), reverse=True)
                 return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()), "email": email, "sends": sends,
+                                            "roadmap": DATA["roadmap"], "ideas": all_ideas(), "roadmapStatus": report.ROADMAP_STATUS,
                                             "todoist": {p["name"]: p["name"] in DATA["todoist"]["tokens"] for p in DATA["config"]["roster"]},
                                             "weeks": report.weeks_with_data(DATA), "defaultWeek": report.default_week(DATA), "writable": WRITABLE, "persistent": state_persistent()})
         if path == "/api/admin/backup":       # everything, screenshots included, for moving hosts (_test/import_backup.py)
@@ -1183,6 +1234,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         if urlsplit(self.path).path == "/api/draft":
             return self.draft("PUT")
+        if urlsplit(self.path).path == "/api/admin/roadmap":
+            if not self.gate("admin"):
+                return
+            body = self.read_json() or {}
+            with LOCK:
+                items = clean_roadmap(body.get("roadmap"))
+                if isinstance(items, str):
+                    return self.send_json(400, {"error": items})
+                before = DATA["roadmap"]
+                DATA["roadmap"] = items
+                if not write("roadmap"):
+                    DATA["roadmap"] = before
+                    return self.unsaved()
+                log_change("update", "roadmap", before, items)
+                return self.send_json(200, {"roadmap": items, "ideas": all_ideas()})
         if urlsplit(self.path).path != "/api/admin/config":
             return self.send_json(404, {"error": "Not found"})
         if not self.gate("admin"):

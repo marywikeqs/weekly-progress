@@ -206,6 +206,7 @@ def html(r: dict, note: str = "") -> str:
                  + "".join(f'<li style="margin:0 0 6px"><b>{escape(i["idea"])}</b> <span style="color:{MUTED}">· {escape(i["name"])}</span>'
                            + (f' <span style="font-size:12px;font-weight:bold;color:{ {"start": GREEN, "idea": MUTED}.get(i["status"], ACCENT) }">· {escape(report.IDEA_STATUS[i["status"]])}</span>'
                               if i.get("status") in report.IDEA_STATUS else "")
+                           + (f' <span style="font-size:12px;font-weight:bold;color:{report.GRAPE}">· 🗺 On the roadmap</span>' if i.get("roadmap") else "")
                            + (f'<br><span style="color:{MUTED};font-size:13px">{escape(i["why"])}</span>' if i["why"] else "") + "</li>" for i in r["ideas"]) + "</ul>")
     if r["spend"]:
         o.append(f'<h2 {h2}>Usage and spend</h2><table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;width:100%">'

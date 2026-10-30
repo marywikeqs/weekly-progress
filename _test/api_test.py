@@ -630,6 +630,32 @@ def run():
     globals()["GOOD_TOKEN"] = good
     call("DELETE", f"/api/admin/send?name=Casey%20Test&week={w9}", auth=ADMIN)
 
+    print("roadmap")
+    w2 = (fri + timedelta(days=7)).isoformat()
+    s, d = call("GET", "/api/admin", auth=ADMIN)
+    check(s == 200 and d["roadmap"] == [] and d["roadmapStatus"] == ["Planned", "In progress", "Done"], "roadmap starts empty")
+    idea = next(i for i in d["ideas"] if i["name"] == "Avery Test")
+    check(idea["roadmap"] is None and idea["last"] >= idea["first"], "every idea is listed for the admin")
+    check(call("PUT", "/api/admin/roadmap", {"roadmap": [{"title": " "}]}, auth=ADMIN)[0] == 400, "a roadmap item needs a name")
+    check(call("PUT", "/api/admin/roadmap", {"roadmap": [{"title": "X", "month": "2027-13"}]}, auth=ADMIN)[0] == 400, "a bad month is refused")
+    check(call("PUT", "/api/admin/roadmap", {"roadmap": []})[0] == 401, "roadmap is admin only")
+    before = call("GET", f"/api/mine?name=Avery%20Test&week={w2}")[1]["lastIdeas"]
+    s, d = call("PUT", "/api/admin/roadmap", {"roadmap": [
+        {"title": idea["idea"], "owner": "Avery Test", "month": "2027-02", "status": "In progress", "source": {"name": "avery test", "idea": idea["idea"].upper()}},
+        {"title": "Q3 thing", "month": "", "status": "bogus"}]}, auth=ADMIN)
+    check(s == 200 and len(d["roadmap"]) == 2 and d["roadmap"][1]["status"] == "Planned" and all(len(x["id"]) == 10 for x in d["roadmap"]),
+          "roadmap saves; unknown status = Planned; ids given")
+    check(next(i for i in d["ideas"] if i["idea"] == idea["idea"] and i["name"] == "Avery Test")["roadmap"] == d["roadmap"][0]["id"],
+          "the idea is marked as on the roadmap (case doesn't matter)")
+    m = call("GET", f"/api/mine?name=Avery%20Test&week={w2}")[1]
+    check(len(m["lastIdeas"]) == len(before) - 1 and idea["idea"] not in [x["idea"] for x in m["lastIdeas"]], "an idea on the roadmap stops carrying over")
+    check(m["roadmapped"] == [idea["idea"].upper()], f"...and the next form says it was added: {m['roadmapped']}")
+    s, html = call("GET", f"/report?week={w1}", auth=ADMIN, raw=True)
+    check("🗺 On the roadmap" in html.decode(), "the report marks it on the roadmap")
+    s, txt = call("GET", f"/report.txt?week={w1}", auth=ADMIN, raw=True)
+    check("[On the roadmap]" in txt.decode(), "...and the Slack text")
+    call("PUT", "/api/admin/roadmap", {"roadmap": []}, auth=ADMIN)
+
     print("persistence")
     if KV:
         check(not (OUT / "state").exists(), "nothing written to disk")
@@ -637,7 +663,7 @@ def run():
               and kv("LLEN", "wp:changes") > 0, "everything is in Redis, with the change log")
         return
     files = sorted(p.name for p in (OUT / "state").iterdir())
-    check(files == ["changes.jsonl", "config.json", "drafts.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")
+    check(files == ["changes.jsonl", "config.json", "drafts.json", "roadmap.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")
 
 
 if __name__ == "__main__":
