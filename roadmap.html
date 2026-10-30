@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Weekly Progress Roadmap</title>
+<style>
+/* Todoist-style, matching the report and Projects over time */
+:root{--bg:#fff;--side:#fcfaf8;--ink:#202020;--muted:#666;--faint:#999;--line:#f0f0f0;--edge:#e6e6e6;--hover:#f5f5f5;
+--accent:#dc4c3e;--teal:#158fad;--blue:#4073ff;--done:#058527;--p1:#d1453b;--p2:#eb8909;--focus:#dc4c3e40}
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.layout{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+aside{background:var(--side);border-right:1px solid var(--line);padding:20px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+.app{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin:0 0 18px 6px}
+.app i{width:22px;height:22px;border-radius:6px;background:var(--accent);display:inline-grid;place-items:center;color:#fff;font-style:normal;font-size:13px}
+nav a{display:flex;gap:10px;align-items:center;padding:6px 8px;border-radius:5px;color:var(--ink);text-decoration:none}
+nav a:hover{background:var(--hover)}nav a em{flex:1;font-style:normal}nav a span{color:var(--faint);font-size:12px}
+.actions{border-top:1px solid var(--line);margin-top:14px;padding-top:12px;display:flex;flex-direction:column;gap:2px}
+.actions a,.actions button{display:block;text-align:left;width:100%;font:inherit;font-size:13px;color:var(--muted);background:none;border:0;padding:6px 8px;border-radius:5px;cursor:pointer;text-decoration:none}
+.actions a:hover,.actions button:hover{background:var(--hover);color:var(--ink)}
+main{padding:32px 32px 80px;max-width:1040px;width:100%}
+h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+h2{font-size:15px;margin:34px 0 0;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.hint{font-size:12.5px;color:var(--muted);margin:8px 0 4px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px}
+.views{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
+.views button{font:inherit;font-size:13px;padding:5px 12px;border:0;background:var(--bg);color:var(--muted);cursor:pointer}
+.views button[aria-pressed=true]{background:var(--ink);color:#fff}
+.saved{flex:1;font-size:12.5px;color:var(--muted);text-align:right}.saved.err{color:var(--p1)}.saved.ok{color:var(--done)}
+.group{margin-top:22px}
+.group h3{font-size:14px;margin:0 0 2px;display:flex;gap:8px;align-items:baseline;padding-bottom:4px;border-bottom:2px solid var(--line)}
+.group h3 small{font-weight:400;color:var(--muted);font-size:12px}
+.rm{border-bottom:1px solid var(--line);padding:7px 0}
+.line{display:flex;gap:10px;align-items:center}
+.ring{flex:none;width:16px;height:16px;border-radius:50%;border:2px solid var(--faint)}
+.s-progress .ring{border-color:var(--blue)}.s-done .ring{border-color:var(--done);background:var(--done)}
+.proj .ring{border-radius:4px;border-color:var(--c)}.proj.s-done .ring{background:var(--c)}
+.s-done .title,.s-done .ptitle{color:var(--muted);text-decoration:line-through}
+input,select{font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink)}
+input:focus,select:focus{outline:none;border-color:var(--faint);box-shadow:0 0 0 2px var(--focus)}
+.title{flex:1;min-width:0;border:0;padding:5px 2px;background:transparent}
+.title:focus,.notes:focus{box-shadow:none;background:var(--hover)}
+.owner{flex:0 0 150px}
+input[type=month],select{font-size:12.5px;padding:4px 6px;color:var(--muted)}
+.notes{display:block;width:calc(100% - 26px);margin:0 0 0 26px;border:0;padding:3px 2px;font-size:12.5px;color:var(--muted);background:transparent}
+.meta{margin-left:26px;font-size:12px;color:var(--muted)}
+.ptitle{flex:1;font-weight:600;color:var(--ink);text-decoration:none}.ptitle:hover{text-decoration:underline}
+.tag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,var(--bg))}
+.x{border:0;background:none;color:var(--faint);font-size:18px;padding:2px 8px;border-radius:4px;cursor:pointer}
+.x:hover{background:var(--hover);color:var(--ink)}
+.add{display:flex;align-items:center;gap:10px;background:none;border:0;padding:10px 0;font:inherit;color:var(--muted);cursor:pointer}
+.add span{width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;color:var(--accent);font-size:18px;line-height:1}
+.add:hover{color:var(--accent)}.add:hover span{background:var(--accent);color:#fff}
+.ideas{list-style:none;padding:0;margin:0}
+.ideas li{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.ideas .grow{flex:1;min-width:0}.ideas small{display:block;color:var(--muted);font-size:12px}
+button.ghost{font:inherit;font-size:13px;padding:5px 10px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink);cursor:pointer;white-space:nowrap}
+button.ghost:hover{background:var(--hover)}
+.on{font-size:12.5px;color:var(--done);white-space:nowrap}
+.empty{color:var(--muted);font-size:13px}
+[hidden]{display:none!important}
+@media (max-width:760px){.layout{grid-template-columns:1fr}aside{position:static;height:auto}main{padding:20px 16px 80px}.line{flex-wrap:wrap}.owner{flex:1 1 120px}}
+@media print{aside,.add,.x,.views,#ideas-sec,.saved{display:none!important}.layout{display:block}input,select{border:0;appearance:none}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+  <div class="app"><i>✓</i>Weekly Progress</div>
+  <nav id="nav"></nav>
+  <div class="actions"><button type="button" onclick="print()">Print / Save as PDF</button><a href="/report">Weekly report</a><a href="/projects">Projects over time</a><a href="/admin">Admin</a></div>
+</aside>
+<main>
+  <h1>Roadmap</h1>
+  <p class="sub">The team's projects, placed by when they should finish (from each one's latest Time left), plus anything else planned. Changes save as you go.</p>
+  <div class="bar">
+    <div class="views" role="group" aria-label="Group by"><button type="button" data-v="quarter" aria-pressed="true">By quarter</button><button type="button" data-v="month" aria-pressed="false">By month</button></div>
+    <div class="views" role="group" aria-label="Show"><button type="button" data-s="all" aria-pressed="true">Everything</button><button type="button" data-s="projects" aria-pressed="false">Projects</button><button type="button" data-s="items" aria-pressed="false">Planned items</button></div>
+    <span class="saved" id="saved">Loading…</span>
+  </div>
+  <div id="list"></div>
+  <p class="empty" id="empty" hidden>Nothing here yet.</p>
+  <button class="add" id="add"><span>+</span>Add roadmap item</button>
+  <datalist id="people"></datalist>
+
+  <section id="ideas-sec">
+  <h2 id="ideas">Ideas from the team</h2>
+  <p class="hint">Every upcoming project idea anyone has sent, newest first. Add to roadmap puts it above. Once it's there, the idea stops carrying over on that person's form, their next form tells them it was added, and the weekly report marks it 🗺 On the roadmap.</p>
+  <ul class="ideas" id="idea-list"></ul>
+  <p class="empty" id="ideas-none" hidden>No ideas sent yet.</p>
+  </section>
+</main>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtWeek = s => new Date(s + 'T12:00').toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+const norm = s => String(s ?? '').split(/\s+/).filter(Boolean).join(' ').toLowerCase();
+const ideaKey = (name, idea) => norm(name) + '|' + norm(idea);
+let roadmap = [], ideas = [], projects = [], statuses = ['Planned', 'In progress', 'Done'], view = 'quarter', show = 'all';
+
+// where a month (or none) goes: [sort key, heading, sub-heading]
+function group(m, bucket) {
+  if (bucket === 'later') return ['x', 'Later', '3+ months left'];
+  if (bucket === 'ongoing') return ['y', 'Ongoing', 'no end date'];
+  if (!m) return ['z', 'Unscheduled', ''];
+  const [y, mo] = m.split('-').map(Number);
+  if (view === 'month') return [m, `${MONTHS[mo - 1]} ${y}`, ''];
+  const q = Math.ceil(mo / 3);
+  return [`${y}-Q${q}`, `Q${q} ${y}`, `${MONTHS[q * 3 - 3].slice(0, 3)}–${MONTHS[q * 3 - 1].slice(0, 3)}`];
+}
+const cls = s => s === 'Done' ? ' s-done' : s === 'In progress' ? ' s-progress' : '';
+
+function projectMeta(p) {
+  const bits = [p.type + ' project', p.people.join(', ')];
+  bits.push(p.status === 'Done' ? `✅ Complete, week ending ${fmtWeek(p.last)}`
+    : p.bucket === 'ongoing' ? '⏳ Ongoing' : `⏳ ${p.timeLeft} left as of ${fmtWeek(p.last)}`);
+  if (p.quietFor) bits.push(`no update for ${p.quietFor} week${p.quietFor === 1 ? '' : 's'}`);
+  return bits.join(' · ');
+}
+
+function render() {
+  const named = new Map(roadmap.map(it => [norm(it.title), it]));
+  const rows = [];
+  if (show !== 'items')        // a planned item with a project's name stands in for it, so nothing shows twice
+    projects.forEach(p => { if (!named.has(norm(p.project))) rows.push({kind: 'p', p, g: group(p.month, p.bucket)}); });
+  if (show !== 'projects')
+    roadmap.forEach((it, i) => rows.push({kind: 'i', i, g: group(it.month)}));
+  const groups = {};
+  rows.forEach(r => { (groups[r.g[0]] = groups[r.g[0]] || {label: r.g[1], sub: r.g[2], rows: []}).rows.push(r); });
+  const proj = new Map(projects.map(p => [norm(p.project), p]));
+  const keys = Object.keys(groups).sort();
+  $('list').innerHTML = keys.map((k, gi) => { const g = groups[k]; return `<div class="group" id="g-${gi}"><h3>${esc(g.label)}${g.sub ? ` <small>${esc(g.sub)}</small>` : ''} <small>· ${g.rows.length}</small></h3>`
+    + g.rows.map(r => {
+      if (r.kind === 'p') { const p = r.p; return `<div class="rm proj${cls(p.status)}" style="--c:${p.type === 'Claude' ? 'var(--accent)' : 'var(--teal)'}">
+        <div class="line"><span class="ring"></span><a class="ptitle" href="/projects">${esc(p.project)}</a><span class="tag">Project</span></div>
+        <div class="meta">${esc(projectMeta(p))}</div></div>`; }
+      const it = roadmap[r.i], p = proj.get(norm(it.title));
+      return `<div class="rm${cls(it.status)}"><div class="line"><span class="ring"></span>
+        <input type="text" class="title" value="${esc(it.title)}" data-t="${r.i}" aria-label="Roadmap item" placeholder="What's planned">
+        <input type="text" class="owner" value="${esc(it.owner)}" data-o="${r.i}" list="people" aria-label="Owner" placeholder="Owner">
+        <input type="month" value="${esc(it.month)}" data-m="${r.i}" aria-label="Month">
+        <select data-s2="${r.i}" aria-label="Status">${statuses.map(s => `<option${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>
+        <button class="x" data-x="${r.i}" title="Take off the roadmap" aria-label="Remove">×</button></div>
+        <input type="text" class="notes" value="${esc(it.notes)}" data-n="${r.i}" aria-label="Notes" placeholder="Notes">
+        ${it.source ? `<div class="meta">💡 From ${esc(it.source.name)}'s idea</div>` : ''}
+        ${p ? `<div class="meta">📁 ${esc(projectMeta(p))}${p.month ? ` · est. finish ${esc(MONTHS[+p.month.slice(5) - 1].slice(0, 3) + ' ' + p.month.slice(0, 4))}` : ''}</div>` : ''}</div>`;
+    }).join('') + '</div>'; }).join('');
+  $('empty').hidden = rows.length > 0;
+  $('add').hidden = show === 'projects';
+  $('nav').innerHTML = keys.map((k, gi) => `<a href="#g-${gi}"><em>${esc(groups[k].label)}</em><span>${groups[k].rows.length}</span></a>`).join('')
+    + '<a href="#ideas"><em>Ideas from the team</em><span>' + ideas.length + '</span></a>';
+  document.querySelectorAll('[data-t]').forEach(el => el.oninput = () => { roadmap[el.dataset.t].title = el.value; later(); });
+  document.querySelectorAll('[data-o]').forEach(el => el.oninput = () => { roadmap[el.dataset.o].owner = el.value; later(); });
+  document.querySelectorAll('[data-n]').forEach(el => el.oninput = () => { roadmap[el.dataset.n].notes = el.value; later(); });
+  document.querySelectorAll('[data-t]').forEach(el => el.onchange = () => render());   // a project's name may now match
+  document.querySelectorAll('[data-m]').forEach(el => el.onchange = () => { roadmap[el.dataset.m].month = el.value; save(); render(); });
+  document.querySelectorAll('[data-s2]').forEach(el => el.onchange = () => { roadmap[el.dataset.s2].status = el.value; save(); render(); });
+  document.querySelectorAll('[data-x]').forEach(el => el.onclick = () => { roadmap.splice(+el.dataset.x, 1); save(); render(); });
+  renderIdeas();
+}
+
+function renderIdeas() {
+  const on = new Set(roadmap.filter(it => it.source).map(it => ideaKey(it.source.name, it.source.idea)));
+  const label = {start: 'Need a greenlight', discuss: "Let's discuss", idea: 'Just an idea'};
+  $('ideas-none').hidden = ideas.length > 0;
+  $('idea-list').innerHTML = ideas.map((x, i) => `<li><div class="grow"><strong>${esc(x.idea)}</strong> · ${esc(x.name)}
+    <small>${x.status in label ? esc(label[x.status]) + ' · ' : ''}${x.first === x.last ? `week ending ${esc(fmtWeek(x.last))}` : `weeks ending ${esc(fmtWeek(x.first))} – ${esc(fmtWeek(x.last))}`}${x.why ? ' · ' + esc(x.why) : ''}</small></div>
+    ${on.has(ideaKey(x.name, x.idea)) ? '<span class="on">🗺 On the roadmap</span>' : `<button class="ghost" type="button" data-i="${i}">Add to roadmap</button>`}</li>`).join('');
+  document.querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
+    const x = ideas[b.dataset.i];
+    roadmap.push({id: '', title: x.idea, owner: x.name, month: '', status: statuses[0], notes: x.why || '', source: {name: x.name, idea: x.idea}});
+    save(); render();
+  });
+}
+
+// saving: right away for picks, a moment after typing stops
+let timer = null, saving = Promise.resolve();
+function status(t, c) { $('saved').textContent = t; $('saved').className = 'saved ' + (c || ''); }
+function later() { status('Unsaved changes'); clearTimeout(timer); timer = setTimeout(save, 900); }
+function save() {
+  clearTimeout(timer); timer = null;
+  if (roadmap.some(it => !it.title.trim())) { status('Give every item a name to save.', 'err'); return; }
+  status('Saving…');
+  saving = saving.then(async () => {
+    try {
+      const r = await fetch('/api/admin/roadmap', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({roadmap})});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      // keep what's on screen; just take the server's ids for new items
+      d.roadmap.forEach((it, i) => { if (roadmap[i] && !roadmap[i].id) roadmap[i].id = it.id; });
+      ideas = d.ideas; renderIdeas();
+      if (!timer) status('All changes saved', 'ok');
+    } catch (e) { status('Not saved: ' + e.message, 'err'); }
+  });
+}
+$('add').onclick = () => {
+  roadmap.push({id: '', title: '', owner: '', month: '', status: statuses[0], notes: '', source: null}); render();
+  const ins = $('list').querySelectorAll('[data-t]'); ins[ins.length - 1].focus();
+};
+document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => {
+  view = b.dataset.v; document.querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', x === b)); render();
+});
+document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
+  show = b.dataset.s; document.querySelectorAll('[data-s]').forEach(x => x.setAttribute('aria-pressed', x === b)); render();
+});
+addEventListener('beforeunload', e => { if (timer) e.preventDefault(); });
+(async () => {
+  try {
+    const r = await fetch('/api/roadmap'); const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    roadmap = d.roadmap; ideas = d.ideas; projects = d.projects; statuses = d.roadmapStatus;
+    $('people').innerHTML = d.roster.map(n => `<option value="${esc(n)}">`).join('');
+    render(); status('All changes saved');
+  } catch (e) { status("Couldn't load: " + e.message, 'err'); }
+})();
+</script>
+</body>
+</html>

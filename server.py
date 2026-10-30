@@ -914,7 +914,6 @@ class Handler(BaseHTTPRequestHandler):
                         o["at"] = max(o["at"], x.get("updatedAt") or x.get("submittedAt") or "")
                 sends = sorted(sends.values(), key=lambda o: (o["week"], o["at"]), reverse=True)
                 return self.send_json(200, {"config": DATA["config"], "learned": sorted(learned.values(), key=lambda o: o["name"].lower()), "email": email, "sends": sends,
-                                            "roadmap": DATA["roadmap"], "ideas": all_ideas(), "roadmapStatus": report.ROADMAP_STATUS,
                                             "todoist": {p["name"]: p["name"] in DATA["todoist"]["tokens"] for p in DATA["config"]["roster"]},
                                             "weeks": report.weeks_with_data(DATA), "defaultWeek": report.default_week(DATA), "writable": WRITABLE, "persistent": state_persistent()})
         if path == "/api/admin/backup":       # everything, screenshots included, for moving hosts (_test/import_backup.py)
@@ -926,6 +925,15 @@ class Handler(BaseHTTPRequestHandler):
             out["screenshots"] = {f: base64.b64encode(b).decode("ascii") for f in sorted(names) if (b := read_shot(f))}
             return self.send_body(200, json.dumps(out, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8",
                                   {"Content-Disposition": f'attachment; filename="weekly-progress-{date.today()}.json"'})
+        if path == "/roadmap":        # what's planned and when: the team's projects plus the admin's items
+            return self.gate("admin") and self.page("roadmap.html")
+        if path == "/api/roadmap":
+            if not self.gate("admin"):
+                return
+            with LOCK:
+                return self.send_json(200, {"roadmap": DATA["roadmap"], "ideas": all_ideas(), "projects": report.roadmap_projects(DATA),
+                                            "roadmapStatus": report.ROADMAP_STATUS,
+                                            "roster": [p["name"] for p in DATA["config"]["roster"] if p.get("active") and p.get("name")]})
         if path == "/projects":       # every project across all weeks, and how it's moving
             if not self.gate("admin"):
                 return

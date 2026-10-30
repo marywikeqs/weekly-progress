@@ -448,6 +448,13 @@ def run():
           and pr["counts"]["quiet"] == 1 and pr["projects"][-1]["project"] == "Done Thing",
           "a project marked Complete isn't 'gone quiet', is counted complete and sorts last")
     check("✅ Complete" in rp.render_projects(pr) and rp.tl_badge("Complete") == "✅ Complete", "projects page shows it complete")
+    fake["updates"] += [{"name": "B", "week": "2026-10-16", "project": "Long", "type": "Claude", "timeLeft": "3+ months"},
+                        {"name": "A", "week": "2026-10-16", "project": "Run", "type": "Claude", "timeLeft": "Ongoing / no end date"},
+                        {"name": "B", "week": "2026-10-16", "project": "x", "type": "Claude", "timeLeft": "1–2 weeks"}]
+    rmp = {x["project"]: x for x in rp.roadmap_projects(fake)}
+    check(rmp["x"]["month"] == "2027-01" and rmp["x"]["timeLeft"] == "1–3 months", "roadmap: a project lands in the month its longest latest Time left points to")
+    check(rmp["Done Thing"]["status"] == "Done" and rmp["Done Thing"]["month"] == "2026-10", "roadmap: a complete project is Done in the month it finished")
+    check(rmp["Long"]["bucket"] == "later" and rmp["Run"]["bucket"] == "ongoing", "roadmap: 3+ months goes under Later, Ongoing under Ongoing")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")
     check("⚑" in html, "over-80% flag shown (Avery 86%)")
     check("+$130" in html, "weekly spend change (430 − 300)")
@@ -632,7 +639,11 @@ def run():
 
     print("roadmap")
     w2 = (fri + timedelta(days=7)).isoformat()
-    s, d = call("GET", "/api/admin", auth=ADMIN)
+    check(call("GET", "/roadmap")[0] == 401 and call("GET", "/api/roadmap")[0] == 401, "roadmap page is admin only")
+    s, page = call("GET", "/roadmap", auth=ADMIN, raw=True)
+    check(s == 200 and b"Ideas from the team" in page, "roadmap page")
+    s, d = call("GET", "/api/roadmap", auth=ADMIN)
+    check(any(x["project"] == "Commission Audit Tool" for x in d["projects"]) and "Avery Test" in d["roster"], "roadmap data has the team's projects")
     check(s == 200 and d["roadmap"] == [] and d["roadmapStatus"] == ["Planned", "In progress", "Done"], "roadmap starts empty")
     idea = next(i for i in d["ideas"] if i["name"] == "Avery Test")
     check(idea["roadmap"] is None and idea["last"] >= idea["first"], "every idea is listed for the admin")

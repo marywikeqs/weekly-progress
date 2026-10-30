@@ -454,6 +454,7 @@ def render_html(r: dict, weeks: list, embed: bool = False) -> str:
 <a href="#impact" style="--c:{ACCENT}"><i></i><em>Claude impact</em><span>{c['hours']:g} hrs</span></a>
 <a href="#spend" style="--c:{GRAPE}"{' class="alert"' if r['flagged'] else ''}><i></i><em>Usage and spend</em><span>{money(c['spend'])}</span></a></nav>
 <div class="actions"><button type="button" onclick="copySlack()">Copy Slack summary</button><button type="button" onclick="print()">Print / Save as PDF</button>
+<a href="/projects">Projects over time</a><a href="/roadmap">Roadmap</a>
 <a href="/export/updates.csv?week={wk}">Projects CSV</a><a href="/export/usage.csv?week={wk}">Usage CSV</a><a href="/admin">Admin</a></div></aside>
 <main><h1>Week ending {escape(nice_date(wk))}</h1><p class="sub">Weekly digest</p>"""]
 
@@ -648,6 +649,32 @@ def projects(data: dict) -> dict:
                        "complete": sum(p["complete"] for p in out)}}
 
 
+# roughly how long each "Time left" answer means, to place a project by when it should finish
+_TL_DAYS = {"1–2 days": 2, "3–5 days": 5, "1–2 weeks": 14, "2–4 weeks": 28, "1–3 months": 91}
+
+
+def roadmap_projects(data: dict) -> list:
+    """Every project for the roadmap: finished ones in the month they were marked Complete; the rest in the
+    month their latest Time left points to (the longest answer if people differ), or Later / Ongoing."""
+    out = []
+    for x in projects(data)["projects"]:
+        latest = [u.get("timeLeft") for u in x["timeline"][0]["entries"]]
+        month, bucket, tl = "", "month", ""
+        if x["complete"]:
+            month, tl = x["completedOn"][:7], COMPLETE
+        elif "3+ months" in latest:
+            bucket, tl = "later", "3+ months"
+        elif any(t in _TL_DAYS for t in latest):
+            tl = max((t for t in latest if t in _TL_DAYS), key=_TL_DAYS.get)
+            month = (date.fromisoformat(x["last"]) + timedelta(days=_TL_DAYS[tl])).isoformat()[:7]
+        else:
+            bucket, tl = "ongoing", "Ongoing / no end date"
+        out.append({"project": x["project"], "type": x["type"], "people": x["people"], "last": x["last"],
+                    "timeLeft": tl, "month": month, "bucket": bucket, "quietFor": x["quietFor"],
+                    "status": "Done" if x["complete"] else "In progress"})
+    return out
+
+
 PROJECTS_STYLE = """
 .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0 4px}
 .filters button{font:inherit;font-size:12.5px;padding:4px 12px;border-radius:999px;border:1px solid var(--edge);background:var(--bg);color:var(--muted);cursor:pointer}
@@ -688,7 +715,7 @@ def render_projects(p: dict, embed: bool = False) -> str:
 <link rel="icon" href="data:,"><title>Weekly Progress Projects</title><style>{STYLE}{PROJECTS_STYLE}{EMBED_STYLE if embed else ""}</style>{EMBED_BASE if embed else ""}</head><body><div class="layout">
 <aside><div class="app"><i>✓</i>Weekly Progress</div>
 <nav>{"".join(f'<a href="#pr-{i}" style="--c:{ACCENT if x["type"] == "Claude" else TEAL}"><i></i><em>{escape(x["project"])}</em><span>{x["weeks"]}w</span></a>' for i, x in enumerate(p["projects"]))}</nav>
-<div class="actions"><button type="button" onclick="print()">Print / Save as PDF</button><a href="/report">Weekly report</a><a href="/export/updates.csv">Projects CSV</a><a href="/admin">Admin</a></div></aside>
+<div class="actions"><button type="button" onclick="print()">Print / Save as PDF</button><a href="/report">Weekly report</a><a href="/roadmap">Roadmap</a><a href="/export/updates.csv">Projects CSV</a><a href="/admin">Admin</a></div></aside>
 <main><h1>Projects</h1><p class="sub">Every project across all weeks, and how it's moving. Latest week: ending {escape(nice_date(p["latest"]))}.</p>
 <div class="stats">{_stat(str(c["active"]), "active projects", "updated in the latest week", BLUE)}{_stat(str(c["new"]), "new", "started in the latest week", GREEN)}{_stat(str(c["slipping"]), "slipping", "time left got longer", ACCENT)}{_stat(str(c["quiet"]), "gone quiet", "no update in the latest week", ORANGE)}{_stat(str(c["complete"]), "complete", "marked complete", GREEN)}</div>
 <div class="filters" role="group" aria-label="Show">
