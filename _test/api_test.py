@@ -452,7 +452,8 @@ def run():
                         {"name": "A", "week": "2026-10-16", "project": "Run", "type": "Claude", "timeLeft": "Ongoing / no end date"},
                         {"name": "B", "week": "2026-10-16", "project": "x", "type": "Claude", "timeLeft": "1–2 weeks"}]
     rmp = {x["project"]: x for x in rp.roadmap_projects(fake)}
-    check(rmp["x"]["month"] == "2027-01" and rmp["x"]["timeLeft"] == "1–3 months", "roadmap: a project lands in the month its longest latest Time left points to")
+    check(rmp["x"]["month"] == "2027-01" and rmp["x"]["timeLeft"] == "1–3 months" and rmp["x"]["finish"] == "2027-01-15"
+          and rmp["x"]["start"] == "2026-10-03", "roadmap: a project lands in the month its longest latest Time left points to")
     check(rmp["Done Thing"]["status"] == "Done" and rmp["Done Thing"]["month"] == "2026-10", "roadmap: a complete project is Done in the month it finished")
     check(rmp["Long"]["bucket"] == "later" and rmp["Run"]["bucket"] == "ongoing", "roadmap: 3+ months goes under Later, Ongoing under Ongoing")
     check("+$20" in html, "Blake weekly spend change (120 - 100)")

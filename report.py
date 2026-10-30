@@ -659,17 +659,19 @@ def roadmap_projects(data: dict) -> list:
     out = []
     for x in projects(data)["projects"]:
         latest = [u.get("timeLeft") for u in x["timeline"][0]["entries"]]
-        month, bucket, tl = "", "month", ""
+        month, bucket, tl, finish = "", "month", "", None
         if x["complete"]:
-            month, tl = x["completedOn"][:7], COMPLETE
+            month, tl, finish = x["completedOn"][:7], COMPLETE, x["completedOn"]
         elif "3+ months" in latest:
             bucket, tl = "later", "3+ months"
         elif any(t in _TL_DAYS for t in latest):
             tl = max((t for t in latest if t in _TL_DAYS), key=_TL_DAYS.get)
-            month = (date.fromisoformat(x["last"]) + timedelta(days=_TL_DAYS[tl])).isoformat()[:7]
+            finish = (date.fromisoformat(x["last"]) + timedelta(days=_TL_DAYS[tl])).isoformat()
+            month = finish[:7]
         else:
             bucket, tl = "ongoing", "Ongoing / no end date"
         out.append({"project": x["project"], "type": x["type"], "people": x["people"], "last": x["last"],
+                    "start": (date.fromisoformat(x["first"]) - timedelta(days=6)).isoformat(), "finish": finish,   # the week it was first sent
                     "timeLeft": tl, "month": month, "bucket": bucket, "quietFor": x["quietFor"],
                     "status": "Done" if x["complete"] else "In progress"})
     return out
