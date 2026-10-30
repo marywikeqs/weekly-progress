@@ -668,6 +668,36 @@ def run():
     check("[On the roadmap]" in txt.decode(), "...and the Slack text")
     call("PUT", "/api/admin/roadmap", {"roadmap": []}, auth=ADMIN)
 
+    print("apps and feature requests")
+    check(call("PUT", "/api/admin/apps", {"apps": []})[0] == 401, "apps are admin only")
+    check(call("PUT", "/api/admin/apps", {"apps": [{"name": " "}]}, auth=ADMIN)[0] == 400, "an app needs a name")
+    s, d = call("PUT", "/api/admin/apps", {"apps": [{"name": "BRD Hub", "url": "brd-hub.example", "status": "Live"},
+                                                     {"name": "Old Tool", "status": "Retired"}, {"name": "Odd", "status": "bogus"}]}, auth=ADMIN)
+    check(s == 200 and d["apps"][0]["url"] == "https://brd-hub.example" and d["apps"][2]["status"] == "Live", "apps save; links get https; unknown status = Live")
+    brd = d["apps"][0]["id"]
+    check([a["name"] for a in call("GET", "/api/config")[1]["apps"]] == ["BRD Hub", "Odd"], "the form lists apps, not retired ones")
+    w3 = (fri + timedelta(days=28)).isoformat()
+    s, d = send("Avery Test", w3, [cat], use, ideas=[{"idea": "Renewal alerts", "status": "idea"}], tweaks=None)
+    base = {"name": "Avery Test", "week": w3, "projects": [cat], "usage": use, "tasks": [], "tweaks": [], "ideas": []}
+    s, d = call("POST", "/api/submit", {**base, "requests": [{"app": "nope", "request": "x"}]})
+    check(s == 400 and d["errors"][0]["request"] == 0 and "app" in d["errors"][0]["error"], "a request needs a real app")
+    s, d = call("POST", "/api/submit", {**base, "requests": [{"app": brd, "request": " "}]})
+    check(s == 400 and "asked for" in d["errors"][0]["error"], "a request needs what's asked for")
+    s, d = call("POST", "/api/submit", {**base, "requests": [{"app": brd, "request": "Bulk close BRDs", "askedBy": "Lisa"}, {"app": "", "request": "", "askedBy": ""}]})
+    check(s == 200 and call("GET", f"/api/mine?name=Avery%20Test&week={w3}")[1]["usage"]["requests"] == [{"app": brd, "request": "Bulk close BRDs", "askedBy": "Lisa"}],
+          "a feature request is saved with the send (blank ones dropped)")
+    rq = next(x for x in call("GET", "/api/roadmap", auth=ADMIN)[1]["requests"] if x["request"] == "Bulk close BRDs")
+    check(rq["appName"] == "BRD Hub" and rq["roadmap"] is None and rq["name"] == "Avery Test", "the roadmap page lists it")
+    s, d = call("PUT", "/api/admin/roadmap", {"roadmap": [{"title": "Bulk close BRDs", "app": brd, "request": {"name": "Avery Test", "week": w3, "request": "bulk close brds"}}]}, auth=ADMIN)
+    check(s == 200 and d["roadmap"][0]["app"] == brd and next(x for x in d["requests"] if x["request"] == "Bulk close BRDs")["roadmap"] == d["roadmap"][0]["id"],
+          "added to the roadmap, tied to its app")
+    s, html = call("GET", f"/report?week={w3}", auth=ADMIN, raw=True)
+    check("Feature requests" in html.decode() and "Bulk close BRDs" in html.decode() and "🗺 On the roadmap" in html.decode(), "the report lists it, on the roadmap")
+    s, txt = call("GET", f"/report.txt?week={w3}", auth=ADMIN, raw=True)
+    check("BRD Hub: Bulk close BRDs (Avery Test, asked by Lisa) [On the roadmap]" in txt.decode(), "...and the Slack text")
+    call("PUT", "/api/admin/roadmap", {"roadmap": []}, auth=ADMIN)
+    call("DELETE", f"/api/admin/send?name=Avery%20Test&week={w3}", auth=ADMIN)
+
     print("admin marks a project complete")
     mark = lambda project, done, **kw: call("PUT", "/api/admin/complete", {"project": project, "complete": done}, **kw)
     check(mark("Commission Audit Tool", True)[0] == 401, "only the admin can mark a project complete")
@@ -695,7 +725,7 @@ def run():
               and kv("LLEN", "wp:changes") > 0, "everything is in Redis, with the change log")
         return
     files = sorted(p.name for p in (OUT / "state").iterdir())
-    check(files == ["changes.jsonl", "closed.json", "config.json", "drafts.json", "roadmap.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")
+    check(files == ["apps.json", "changes.jsonl", "closed.json", "config.json", "drafts.json", "roadmap.json", "screenshots", "sent.json", "tasks.json", "todoist.json", "updates.json", "usage.json"], f"state files: {files}")
 
 
 if __name__ == "__main__":

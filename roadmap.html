@@ -100,9 +100,19 @@ input[type=month],select{font-size:12.5px;padding:4px 6px;color:var(--muted)}
 button.ghost{font:inherit;font-size:13px;padding:5px 10px;border:1px solid var(--edge);border-radius:5px;background:var(--bg);color:var(--ink);cursor:pointer;white-space:nowrap}
 button.ghost:hover{background:var(--hover)}
 .on{font-size:12.5px;color:var(--done);white-space:nowrap}
+.apptag{font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,#fff);white-space:nowrap}
+.app-row{border-bottom:1px solid var(--line);padding:8px 0}
+.app-row .name{flex:0 0 220px;font-weight:600}
+.app-row .url{flex:1;min-width:0;font-size:12.5px;color:var(--muted)}
+.app-row .open{font-size:12.5px;color:var(--blue);text-decoration:none;white-space:nowrap}.app-row .open:hover{text-decoration:underline}
+.app-row.off .name{color:var(--faint);text-decoration:line-through}
+.app-row .stats{margin-left:26px;font-size:12px;color:var(--muted)}
+.dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--done);margin:0 3px}
+.app-row.paused .dot{background:#eb8909}.app-row.off .dot{background:var(--faint)}
+.tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 [hidden]{display:none!important}
 @media (max-width:760px){.layout{grid-template-columns:1fr}aside{position:static;height:auto}main{padding:20px 16px 80px}.line{flex-wrap:wrap}.owner{flex:1 1 120px}}
-@media print{@page{size:landscape}aside,.add,.views,.saved,#edit-sec,#ideas-sec{display:none!important}.layout{display:block}main{padding:0}
+@media print{@page{size:landscape}aside,.add,.views,.saved,#edit-sec,#ideas-sec,#apps-sec,#req-sec{display:none!important}.layout{display:block}main{padding:0}
   .scroll{overflow:visible;border:0}.tl{min-width:0}.head,.lab{position:static}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
@@ -110,7 +120,7 @@ button.ghost:hover{background:var(--hover)}
 <div class="layout">
 <aside>
   <div class="app"><i>✓</i>Weekly Progress</div>
-  <nav><a href="#timeline"><em>Roadmap</em></a><a href="#edit"><em>Planned items</em><span id="n-items"></span></a><a href="#ideas"><em>Ideas from the team</em><span id="n-ideas"></span></a></nav>
+  <nav><a href="#timeline"><em>Roadmap</em></a><a href="#edit"><em>Planned items</em><span id="n-items"></span></a><a href="#apps"><em>Our apps</em><span id="n-apps"></span></a><a href="#requests"><em>Feature requests</em><span id="n-reqs"></span></a><a href="#ideas"><em>Ideas from the team</em><span id="n-ideas"></span></a></nav>
   <div class="actions"><button type="button" onclick="print()">Print / Save as PDF</button><a href="/report">Weekly report</a><a href="/projects">Projects over time</a><a href="/admin">Admin</a></div>
 </aside>
 <main>
@@ -136,6 +146,21 @@ button.ghost:hover{background:var(--hover)}
   <datalist id="people"></datalist>
   </section>
 
+  <section id="apps-sec">
+  <h2 id="apps">Our apps</h2>
+  <p class="hint">The apps we've built and look after. The team picks from this list when they log a feature request on the weekly form (Retired apps drop off it). Planned items can be tied to an app. Changes save as you go.</p>
+  <div id="app-list"></div>
+  <div class="tools"><button class="add" id="add-app"><span>+</span>Add app</button>
+    <label class="add" style="cursor:pointer"><span>⇪</span>Import apps from a file<input type="file" id="import-apps" accept=".json,application/json" hidden></label></div>
+  </section>
+
+  <section id="req-sec">
+  <h2 id="requests">Feature requests</h2>
+  <p class="hint">Changes the team logged on the weekly form for one of our apps, newest first. Add to roadmap makes it a planned item tied to that app; the weekly report then marks it 🗺 On the roadmap.</p>
+  <ul class="ideas" id="req-list"></ul>
+  <p class="empty" id="reqs-none" hidden>No feature requests yet.</p>
+  </section>
+
   <section id="ideas-sec">
   <h2 id="ideas">Ideas from the team</h2>
   <p class="hint">Every upcoming project idea anyone has sent, newest first. Add to roadmap makes it a planned item. Once it's there, the idea stops carrying over on that person's form, their next form tells them it was added, and the weekly report marks it 🗺 On the roadmap.</p>
@@ -152,6 +177,8 @@ const fmtDay = s => new Date(s + 'T12:00').toLocaleDateString(undefined, {month:
 const norm = s => String(s ?? '').split(/\s+/).filter(Boolean).join(' ').toLowerCase();
 const ideaKey = (name, idea) => norm(name) + '|' + norm(idea);
 let roadmap = [], ideas = [], projects = [], statuses = ['Planned', 'In progress', 'Done'], zoom = 'quarter', show = 'all';
+let apps = [], appStatus = ['Live', 'Paused', 'Retired'], requests = [];
+const appName = id => (apps.find(a => a.id === id) || {}).name || '';
 
 // ---- time as months: 2027-01-16 -> months since year 0, plus how far through the month ----
 function mu(iso) {
@@ -221,7 +248,7 @@ function renderTimeline() {
       const p = proj.get(norm(it.title)), u = mu(it.month + '-01');
       const colour = it.status === 'In progress' ? 'var(--blue)' : it.status === 'Done' ? 'var(--done)' : 'var(--grape)';
       const start = p && it.status !== 'Planned' ? mu(p.start) : u;     // a project under way runs from when it started
-      const sub = [it.owner, it.status, p ? 'project' : '', it.source ? `${it.source.name}'s idea` : ''].filter(Boolean).join(' · ');
+      const sub = [appName(it.app), it.owner, it.status, p ? 'project' : '', it.source ? `${it.source.name}'s idea` : '', it.request ? 'feature request' : ''].filter(Boolean).join(' · ');
       o.push(row(it.title, sub, '', bar(start, u + 1, it.status === 'Planned' ? 'planned' : it.status === 'Done' ? 'done' : '', colour,
         `${MON[+it.month.slice(5) - 1]} ${it.month.slice(0, 4)}${it.status === 'Planned' ? '' : ' · ' + it.status}`, `${it.title}${it.notes ? ': ' + it.notes : ''}`, `data-go="${i}"`)));
     });
@@ -260,11 +287,13 @@ function renderList() {
   $('list').innerHTML = roadmap.map((it, i) => { const p = proj.get(norm(it.title)); return `<div class="rm${cls(it.status)}" data-row="${i}"><div class="line"><span class="ring"></span>
     <input type="text" class="title" value="${esc(it.title)}" data-t="${i}" aria-label="Roadmap item" placeholder="What's planned">
     <input type="text" class="owner" value="${esc(it.owner)}" data-o="${i}" list="people" aria-label="Owner" placeholder="Owner">
+    <select data-a="${i}" aria-label="App"><option value="">No app</option>${apps.map(a => `<option value="${esc(a.id)}"${a.id === it.app ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
     <input type="month" value="${esc(it.month)}" data-m="${i}" aria-label="Month">
     <select data-s2="${i}" aria-label="Status">${statuses.map(s => `<option${s === it.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>
     <button class="x" data-x="${i}" title="Take off the roadmap" aria-label="Remove">×</button></div>
     <input type="text" class="notes" value="${esc(it.notes)}" data-n="${i}" aria-label="Notes" placeholder="Notes">
     ${it.source ? `<div class="meta">💡 From ${esc(it.source.name)}'s idea</div>` : ''}
+    ${it.request ? `<div class="meta">🛠 Feature request from ${esc(it.request.name)}, week ending ${esc(fmtDay(it.request.week))}</div>` : ''}
     ${p ? `<div class="meta">📁 Stands in for the project: ${esc(projectMeta(p))}</div>` : ''}</div>`; }).join('')
     || '<p class="empty" style="padding-left:0">Nothing planned yet.</p>';
   $('n-items').textContent = roadmap.length;
@@ -273,6 +302,7 @@ function renderList() {
   document.querySelectorAll('[data-n]').forEach(el => el.oninput = () => { roadmap[el.dataset.n].notes = el.value; later(); });
   document.querySelectorAll('[data-t], [data-o], [data-n]').forEach(el => el.onchange = () => renderTimeline());
   document.querySelectorAll('[data-m]').forEach(el => el.onchange = () => { roadmap[el.dataset.m].month = el.value; save(); render(); });
+  document.querySelectorAll('[data-a]').forEach(el => el.onchange = () => { roadmap[el.dataset.a].app = el.value; save(); render(); });
   document.querySelectorAll('[data-s2]').forEach(el => el.onchange = () => { roadmap[el.dataset.s2].status = el.value; save(); render(); });
   document.querySelectorAll('[data-x]').forEach(el => el.onclick = () => { roadmap.splice(+el.dataset.x, 1); save(); render(); });
 }
@@ -291,7 +321,81 @@ function renderIdeas() {
     save(); render();
   });
 }
-function render() { renderTimeline(); renderList(); renderIdeas(); }
+function renderApps() {
+  const counts = id => { const r = requests.filter(x => x.app === id), on = roadmap.filter(it => it.app === id);
+    return [r.length ? `${r.length} request${r.length === 1 ? '' : 's'}` : '', on.length ? `${on.length} on the roadmap` : ''].filter(Boolean).join(' · '); };
+  $('app-list').innerHTML = apps.map((a, i) => `<div class="app-row${a.status === 'Retired' ? ' off' : a.status === 'Paused' ? ' paused' : ''}"><div class="line"><span class="dot"></span>
+    <input type="text" class="title name" value="${esc(a.name)}" data-an="${i}" aria-label="App name" placeholder="App name">
+    <input type="text" class="title url" value="${esc(a.url)}" data-au="${i}" aria-label="Link" placeholder="Link, e.g. https://…">
+    ${a.url ? `<a class="open" href="${esc(a.url)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
+    <input type="text" class="owner" value="${esc(a.owner)}" data-ao="${i}" list="people" aria-label="Owner" placeholder="Owner">
+    <select data-as="${i}" aria-label="Status">${appStatus.map(s => `<option${s === a.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>
+    <button class="x" data-ax="${i}" title="Remove the app" aria-label="Remove">×</button></div>
+    <input type="text" class="notes" value="${esc(a.about)}" data-ab="${i}" aria-label="What it does" placeholder="What it does">
+    ${a.id && counts(a.id) ? `<div class="stats">${esc(counts(a.id))}</div>` : ''}</div>`).join('')
+    || '<p class="empty" style="padding-left:0">No apps yet. Add one, or import the list.</p>';
+  $('n-apps').textContent = apps.length;
+  const edit = (attr, key) => document.querySelectorAll(`[data-${attr}]`).forEach(el => el.oninput = () => { apps[el.dataset[attr]][key] = el.value; appsLater(); });
+  edit('an', 'name'); edit('au', 'url'); edit('ao', 'owner'); edit('ab', 'about');
+  document.querySelectorAll('[data-au]').forEach(el => el.onchange = () => renderApps());
+  document.querySelectorAll('[data-as]').forEach(el => el.onchange = () => { apps[el.dataset.as].status = el.value; saveApps(); renderApps(); });
+  document.querySelectorAll('[data-ax]').forEach(el => el.onclick = () => { apps.splice(+el.dataset.ax, 1); saveApps(); render(); });
+}
+function renderRequests() {
+  const on = new Set(roadmap.filter(it => it.request).map(it => [norm(it.request.name), it.request.week, norm(it.request.request)].join('|')));
+  $('reqs-none').hidden = requests.length > 0;
+  $('n-reqs').textContent = requests.length;
+  $('req-list').innerHTML = requests.map((x, i) => `<li><div class="grow"><strong>${esc(x.request)}</strong> <span class="apptag">${esc(x.appName)}</span>
+    <small>${esc(x.name)}, week ending ${esc(fmtDay(x.week))}${x.askedBy ? ' · asked by ' + esc(x.askedBy) : ''}</small></div>
+    ${on.has([norm(x.name), x.week, norm(x.request)].join('|')) ? '<span class="on">🗺 On the roadmap</span>' : `<button class="ghost" type="button" data-rq="${i}">Add to roadmap</button>`}</li>`).join('');
+  document.querySelectorAll('[data-rq]').forEach(b => b.onclick = () => {
+    const x = requests[b.dataset.rq];
+    roadmap.push({id: '', title: x.request, owner: '', month: '', status: statuses[0], notes: x.askedBy ? `Asked by ${x.askedBy}` : '',
+                  source: null, app: x.app, request: {name: x.name, week: x.week, request: x.request}});
+    save(); render();
+  });
+}
+function render() { renderTimeline(); renderList(); renderApps(); renderRequests(); renderIdeas(); }
+
+// apps save on their own, the same way
+let appTimer = null, appSaving = Promise.resolve();
+function appsLater() { status('Unsaved changes'); clearTimeout(appTimer); appTimer = setTimeout(saveApps, 900); }
+function saveApps() {
+  clearTimeout(appTimer); appTimer = null;
+  if (apps.some(a => !a.name.trim())) { status('Give every app a name to save.', 'err'); return; }
+  status('Saving…');
+  appSaving = appSaving.then(async () => {
+    try {
+      const r = await fetch('/api/admin/apps', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({apps})});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      const fresh = !apps.every(a => a.id);
+      d.apps.forEach((a, i) => { if (apps[i] && !apps[i].id) apps[i].id = a.id; });
+      requests = d.requests;
+      if (fresh) render(); else renderRequests();     // new apps can now be picked on planned items
+      if (!appTimer) status('All changes saved', 'ok');
+    } catch (e) { status('Not saved: ' + e.message, 'err'); }
+  });
+}
+$('add-app').onclick = () => {
+  apps.push({id: '', name: '', url: '', owner: '', status: appStatus[0], about: ''}); renderApps();
+  const ins = $('app-list').querySelectorAll('[data-an]'); ins[ins.length - 1].focus();
+};
+// a JSON list of apps ([{name, url, owner, status, about}]); ones already listed by name are skipped
+$('import-apps').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const list = JSON.parse(await f.text());
+    if (!Array.isArray(list)) throw new Error('the file should hold a list of apps');
+    const have = new Set(apps.map(a => norm(a.name)));
+    const add = list.filter(x => x && x.name && !have.has(norm(x.name)))
+      .map(x => ({id: '', name: String(x.name), url: String(x.url || ''), owner: String(x.owner || ''), status: appStatus.includes(x.status) ? x.status : appStatus[0], about: String(x.about || '')}));
+    apps.push(...add); renderApps();
+    if (add.length) saveApps();
+    status(`Imported ${add.length} app${add.length === 1 ? '' : 's'}${list.length > add.length ? ` (${list.length - add.length} already listed)` : ''}`, 'ok');
+  } catch (err) { status("Couldn't import: " + err.message, 'err'); }
+};
 
 // saving: right away for picks, a moment after typing stops
 let timer = null, saving = Promise.resolve();
@@ -308,7 +412,7 @@ function save() {
       if (!r.ok) throw new Error(d.error || r.status);
       // keep what's on screen; just take the server's ids for new items
       d.roadmap.forEach((it, i) => { if (roadmap[i] && !roadmap[i].id) roadmap[i].id = it.id; });
-      ideas = d.ideas; renderIdeas();
+      ideas = d.ideas; requests = d.requests; renderIdeas(); renderRequests(); renderApps();
       if (!timer) status('All changes saved', 'ok');
     } catch (e) { status('Not saved: ' + e.message, 'err'); }
   });
@@ -323,12 +427,13 @@ document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => {
 document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
   show = b.dataset.s; document.querySelectorAll('[data-s]').forEach(x => x.setAttribute('aria-pressed', x === b)); renderTimeline();
 });
-addEventListener('beforeunload', e => { if (timer) e.preventDefault(); });
+addEventListener('beforeunload', e => { if (timer || appTimer) e.preventDefault(); });
 (async () => {
   try {
     const r = await fetch('/api/roadmap'); const d = await r.json();
     if (!r.ok) throw new Error(d.error || r.status);
     roadmap = d.roadmap; ideas = d.ideas; projects = d.projects; statuses = d.roadmapStatus;
+    apps = d.apps; appStatus = d.appStatus; requests = d.requests;
     $('people').innerHTML = d.roster.map(n => `<option value="${esc(n)}">`).join('');
     render(); status('All changes saved');
   } catch (e) { status("Couldn't load: " + e.message, 'err'); }

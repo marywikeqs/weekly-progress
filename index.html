@@ -143,6 +143,15 @@ button:disabled{opacity:.6;cursor:default}
       <button type="button" class="add-line" id="add-idea">+ Add an idea</button>
     </div>
 
+    <div id="req-wrap" hidden>
+    <h2>Feature requests <span class="opt">Someone asked for a change to one of our apps? Log it here (optional).</span></h2>
+    <div class="card">
+      <div id="reqs"></div>
+      <p id="reqs-empty">Nothing added.</p>
+      <button type="button" class="add-line" id="add-req">+ Add a request</button>
+    </div>
+    </div>
+
 
     <h2>Claude usage</h2>
     <div class="card" id="usage">
@@ -251,6 +260,8 @@ async function init() {
   $('name').onchange = () => { store('wp-name', $('name').value); load(); };
   $('add-task').onclick = () => addTask().querySelector('.t-cat').focus();
   $('add-idea').onclick = () => addIdea().querySelector('.i-idea').focus();
+  $('add-req').onclick = () => addReq().querySelector('.r-text').focus();
+  $('req-wrap').hidden = !(CFG.apps || []).length;
   $('todo-connect').onclick = todoConnect;
   $('todo-token').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); todoConnect(); } });
   $('add-tweak').onclick = () => addTweak().querySelector('.w-proj').focus();
@@ -313,6 +324,9 @@ async function load() {
   (MINE.usage ? MINE.usage.ideas || [] : MINE.lastIdeas || []).forEach(x => addIdea(x));   // ideas carry over until removed
   ideasEmpty();
   pickedUp();
+  $('reqs').innerHTML = '';
+  (MINE.usage?.requests || []).forEach(x => addReq(x));   // requests are one-offs: they don't carry over
+  reqsEmpty();
   fillUsage();
   todoShow();
   $('send').textContent = MINE.updates.length || MINE.usage ? 'Send updated version' : 'Send weekly update';
@@ -331,7 +345,7 @@ async function load() {
 // ---- drafts: the form as typed, kept on the server until sent ----
 function readForm() {
   return {projects: [...document.querySelectorAll('.proj')].map(readCard), tasks: [...document.querySelectorAll('#tasks .task')].map(readTask),
-          tweaks: [...document.querySelectorAll('.tweak')].map(readTweak), ideas: [...document.querySelectorAll('.idea')].map(readIdea), ideasFrom: 'all', spend: $('spend').value, budget: $('budget').value};
+          tweaks: [...document.querySelectorAll('.tweak')].map(readTweak), ideas: [...document.querySelectorAll('.idea')].map(readIdea), ideasFrom: 'all', requests: [...document.querySelectorAll('.req')].map(readReq), spend: $('spend').value, budget: $('budget').value};
 }
 function applyForm(f) {
   $('projects').innerHTML = ''; cardSeq = 0;
@@ -353,6 +367,9 @@ function applyForm(f) {
   ideas.forEach(x => addIdea(x));
   ideasEmpty();
   pickedUp();
+  $('reqs').innerHTML = '';
+  (f.requests || []).forEach(x => addReq(x));
+  reqsEmpty();
   $('spend').value = f.spend ?? ''; $('budget').value = f.budget ?? '';
   if (!MINE.usage) $('shot-state').textContent = "Drafts don't keep the screenshot. Attach it before you send.";
 }
@@ -683,6 +700,26 @@ function addIdea(x = {}) {
   return el;
 }
 let ideaSeq = 0;
+// ---- feature requests for the apps we look after ----
+function addReq(x = {}) {
+  const el = document.createElement('div');
+  el.className = 'task req';
+  el.innerHTML = `<div class="foot" style="margin-top:0"><select class="r-app" aria-label="App">${options(CFG.apps.map(a => ({value: a.id, label: a.name})), 'Which app?')}</select>
+      <button type="button" class="remove" aria-label="Remove this request">Remove</button></div>
+    <input class="r-text" maxlength="300" placeholder="What's being asked for, e.g. Export the list to CSV" aria-label="Feature request">
+    <input class="r-who" maxlength="80" placeholder="Who asked for it (optional)" aria-label="Who asked for it">
+    <div class="t-err" hidden></div>`;
+  const q = s => el.querySelector(s);
+  q('.r-app').value = x.app || ''; q('.r-text').value = x.request || ''; q('.r-who').value = x.askedBy || '';
+  const clear = () => { el.querySelectorAll('.invalid').forEach(i => i.classList.remove('invalid')); q('.t-err').hidden = true; };
+  el.addEventListener('change', clear); el.addEventListener('input', clear);
+  q('.remove').onclick = () => { el.remove(); reqsEmpty(); };
+  $('reqs').append(el);
+  reqsEmpty();
+  return el;
+}
+function reqsEmpty() { $('reqs-empty').hidden = !!$('reqs').children.length; }
+const readReq = el => ({app: el.querySelector('.r-app').value, request: el.querySelector('.r-text').value.trim(), askedBy: el.querySelector('.r-who').value.trim()});
 // ideas of theirs added to the roadmap since their last send: said once, and they no longer carry over
 function pickedUp() {
   const p = MINE.roadmapped || [];
@@ -773,6 +810,17 @@ async function send(ev) {
     taskError(el, errs.join(' '));
     if (errs.length && !firstBad) firstBad = el;
   });
+  // requests: blank ones are skipped; each needs its app and what's asked for
+  const reqEls = [...document.querySelectorAll('.req')].filter(el => { const d = readReq(el); return d.app || d.request || d.askedBy; });
+  reqEls.forEach(el => {
+    const d = readReq(el), errs = [];
+    el.querySelector('.r-app').classList.toggle('invalid', !d.app);
+    el.querySelector('.r-text').classList.toggle('invalid', !d.request);
+    if (!d.app) errs.push('Pick the app.');
+    if (!d.request) errs.push("Say what's being asked for.");
+    taskError(el, errs.join(' '));
+    if (errs.length && !firstBad) firstBad = el;
+  });
   const ub = checkUsage();
   ub.forEach(b => b[0].classList.add('invalid'));
   $('usage-err').textContent = ub.map(b => b[1]).join(' '); $('usage-err').hidden = !ub.length;
@@ -780,7 +828,7 @@ async function send(ev) {
   if (firstBad) { msg('A few things need fixing. They\'re marked in red.', 'err'); firstBad.scrollIntoView({behavior: 'smooth', block: 'center'}); return; }
 
   const body = {
-    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), tweaks: tweakEls.map(readTweak), ideas: ideaEls.map(readIdea),
+    name: $('name').value, week: $('week').value, projects: used.map(readCard), tasks: taskEls.map(readTask), tweaks: tweakEls.map(readTweak), ideas: ideaEls.map(readIdea), requests: reqEls.map(readReq),
     usage: {spend: num($('spend').value), budget: num($('budget').value), screenshot: shotData},
   };
   const btn = $('send'); btn.disabled = true; msg('Sending…');
@@ -795,6 +843,7 @@ async function send(ev) {
       else if (x.task != null && taskEls[x.task]) taskError(taskEls[x.task], x.error);
       else if (x.tweak != null && tweakEls[x.tweak]) taskError(tweakEls[x.tweak], x.error);
       else if (x.idea != null && ideaEls[x.idea]) taskError(ideaEls[x.idea], x.error);
+      else if (x.request != null && reqEls[x.request]) taskError(reqEls[x.request], x.error);
       else if (x.project != null && used[x.project]) cardError(used[x.project], x.error);
     });
     msg(e.message, 'err');

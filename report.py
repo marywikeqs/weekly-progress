@@ -39,6 +39,21 @@ def idea_key(name: str, idea: str) -> tuple:
     return (str(name).strip().lower(), " ".join(str(idea).split()).lower())
 
 
+# the apps the team has built and looks after; feature requests for them come in on the form
+APP_STATUS = ["Live", "Paused", "Retired"]
+
+
+def request_key(name: str, week: str, request: str) -> tuple:
+    """A feature request: who sent it, the week, and what was asked for."""
+    return (str(name).strip().lower(), str(week), " ".join(str(request).split()).lower())
+
+
+def requests_on_roadmap(data: dict) -> dict:
+    """request_key -> the roadmap item id it became."""
+    return {request_key(r.get("name", ""), r.get("week", ""), r.get("request", "")): it["id"]
+            for it in data.get("roadmap", []) if (r := it.get("request"))}
+
+
 def closed_out(data: dict, project: str) -> dict | None:
     """The admin's 'Mark complete' for a project, while it stands: an update for a later week
     than the last one before it was marked means the work carried on, so it no longer counts."""
@@ -196,6 +211,11 @@ def build(data: dict, week: str) -> dict:
     # tweaks: small changes to existing projects or tools, by person
     tweaks = [{"name": u["name"], **t} for u in sorted(cur["usage"], key=lambda u: u["name"]) for t in u.get("tweaks", [])]
     # upcoming project ideas, by person
+    apps = {a["id"]: a["name"] for a in data.get("apps", [])}
+    on_rm = requests_on_roadmap(data)
+    feature_requests = [{"name": u["name"], **x, "appName": apps.get(x.get("app"), "An app"),
+                         "roadmap": request_key(u["name"], u["week"], x["request"]) in on_rm}
+                        for u in sorted(cur["usage"], key=lambda u: u["name"]) for x in u.get("requests", [])]
     rm = roadmapped(data)
     ideas = [{"name": u["name"], **i, "roadmap": idea_key(u["name"], i["idea"]) in rm}
              for u in sorted(cur["usage"], key=lambda u: u["name"]) for i in u.get("ideas", [])]
@@ -225,7 +245,7 @@ def build(data: dict, week: str) -> dict:
     return {
         "week": week, "prevWeek": prev, "hasPrev": has_prev, "sameMonth": same_month,
         "cur": cur, "last": last, "participation": participation,
-        "people": people, "other": other_groups, "top": top, "ideas": ideas, "tweaks": tweaks,
+        "people": people, "other": other_groups, "top": top, "ideas": ideas, "tweaks": tweaks, "requests": feature_requests,
         "fits": sorted((u for u in cur["updates"] if u.get("claudeFit") in ("Yes", "Maybe")),
                        key=lambda u: (u["claudeFit"] != "Yes", u["project"].lower())),
         "spend": spend_rows, "budgetChanges": budget_changes,
@@ -271,6 +291,10 @@ def render_text(r: dict, base_url: str = "") -> str:
     if r["fits"]:
         lines.append("*Non-Claude projects Claude could help with:*")
         lines += [f"   • {u['project']} ({u['name']}, {u['claudeFit']}): {u['claudeHow']}" for u in r["fits"]]
+    if r["requests"]:
+        lines.append("*Feature requests:*")
+        lines += [f"   • {x['appName']}: {x['request']} ({x['name']}" + (f", asked by {x['askedBy']}" if x.get("askedBy") else "") + ")"
+                  + (" [On the roadmap]" if x["roadmap"] else "") for x in r["requests"]]
     if r["ideas"]:
         lines.append("*Upcoming project ideas:*")
         lines += [f"   • {i['name']}: {i['idea']}" + (f" [{IDEA_STATUS[i['status']]}]" if i.get("status") in IDEA_STATUS else "")
@@ -545,6 +569,14 @@ def render_html(r: dict, weeks: list, embed: bool = False) -> str:
             + f'<div class="why">{escape(t["change"])}</div></div></li>' for t in r["tweaks"]) + "</ul>")
     else:
         o.append('<p class="empty">No tweaks this week.</p>')
+
+    # feature requests for the apps we look after
+    if r["requests"]:
+        o.append(f'<h2 id="requests" style="--c:{BLUE}">Feature requests <span>{len(r["requests"])}</span></h2>'
+                 '<p class="note">Changes asked for in the apps we\'ve built and look after.</p><ul class="ideas">' + "".join(
+            f'<li>{_av(x["name"], pc.get(x["name"], BLUE), "sm")}<div><strong>{escape(x["request"])}</strong> {_pill(x["appName"], BLUE)}'
+            f' <span class="label">{escape(x["name"])}</span>' + (" " + _pill("🗺 On the roadmap", GRAPE) if x["roadmap"] else "")
+            + (f'<div class="why">Asked by {escape(x["askedBy"])}</div>' if x.get("askedBy") else "") + "</div></li>" for x in r["requests"]) + "</ul>")
 
     # upcoming project ideas
     o.append(f'<h2 id="ideas" style="--c:{TEAL}">Upcoming project ideas <span>{len(r["ideas"])}</span></h2>')

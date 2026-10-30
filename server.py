@@ -114,7 +114,7 @@ KV_URL = _env_ending("KV_REST_API_URL", "UPSTASH_REDIS_REST_URL").rstrip("/")
 KV_TOKEN = _env_ending("KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_TOKEN")
 ON_VERCEL = bool(os.environ.get("VERCEL"))
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
-KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist", "roadmap", "closed")
+KEYS = ("config", "updates", "usage", "tasks", "sent", "drafts", "todoist", "roadmap", "closed", "apps")
 
 TYPES = ["Claude", "Non-Claude"]
 TIME_SAVED = list(report.TIME_SAVED_HOURS)
@@ -208,7 +208,8 @@ def load() -> None:
     DATA["todoist"].setdefault("tokens", {})
     DATA["todoist"].setdefault("tasks", {})
     DATA["roadmap"] = read("roadmap.json", [])   # admin only: what's planned, by month; items may come from someone's idea
-    DATA["closed"] = read("closed.json", {})      # projects the admin marked complete: lower name -> {project, on, at, week}
+    DATA["closed"] = read("closed.json", {})
+    DATA["apps"] = read("apps.json", [])          # the apps the team built and looks after: {id, name, url, owner, status, about}      # projects the admin marked complete: lower name -> {project, on, at, week}
     purge_retired()
 
 
@@ -436,6 +437,40 @@ def all_ideas() -> list:
     return sorted(seen.values(), key=lambda i: (i["last"], i["first"]), reverse=True)
 
 
+def all_requests() -> list:
+    """Every feature request sent, newest first, with its app's name and its roadmap item if any."""
+    apps = {a["id"]: a["name"] for a in DATA["apps"]}
+    on = report.requests_on_roadmap(DATA)
+    out = [{"name": u["name"], "week": u["week"], "app": x.get("app", ""), "appName": apps.get(x.get("app"), "(app removed)"),
+            "request": x["request"], "askedBy": x.get("askedBy", ""),
+            "roadmap": on.get(report.request_key(u["name"], u["week"], x["request"]))}
+           for u in DATA["usage"] for x in u.get("requests") or []]
+    return sorted(out, key=lambda x: (x["week"], x["name"]), reverse=True)
+
+
+def clean_apps(items) -> list | str:
+    """The admin's list of apps, checked; or what's wrong with it."""
+    if not isinstance(items, list):
+        return "The apps should be a list."
+    out, ids = [], set()
+    for x in items[:200]:
+        x = x if isinstance(x, dict) else {}
+        name = re.sub(r"\s+", " ", str(x.get("name") or "")).strip()[:100]
+        if not name:
+            return "Every app needs a name."
+        url = str(x.get("url") or "").strip()[:300]
+        if url and not re.match(r"https?://", url):
+            url = "https://" + url
+        rid = str(x.get("id") or "")[:20]
+        if not re.fullmatch(r"[a-z0-9]{6,20}", rid) or rid in ids:
+            rid = secrets.token_hex(5)
+        ids.add(rid)
+        out.append({"id": rid, "name": name, "url": url, "owner": re.sub(r"\s+", " ", str(x.get("owner") or "")).strip()[:80],
+                    "status": x.get("status") if x.get("status") in report.APP_STATUS else report.APP_STATUS[0],
+                    "about": str(x.get("about") or "").strip()[:500]})
+    return out
+
+
 def clean_roadmap(items) -> list | str:
     """The admin's roadmap as sent from the admin page, checked; or what's wrong with it."""
     if not isinstance(items, list):
@@ -454,13 +489,21 @@ def clean_roadmap(items) -> list | str:
         if not re.fullmatch(r"[a-z0-9]{6,20}", rid) or rid in ids:
             rid = secrets.token_hex(5)
         ids.add(rid)
+        req = x.get("request")
+        if isinstance(req, dict) and str(req.get("request") or "").strip():
+            req = {"name": str(req.get("name") or "").strip()[:80], "week": str(req.get("week") or "")[:10],
+                   "request": str(req["request"]).strip()[:300]}
+        else:
+            req = None
+        app = str(x.get("app") or "")
+        app = app if app in {a["id"] for a in DATA["apps"]} else ""
         src = x.get("source")
         if isinstance(src, dict) and str(src.get("name") or "").strip() and str(src.get("idea") or "").strip():
             src = {"name": str(src["name"]).strip()[:80], "idea": str(src["idea"]).strip()[:120]}
         else:
             src = None
         out.append({"id": rid, "title": title, "owner": re.sub(r"\s+", " ", str(x.get("owner") or "")).strip()[:80],
-                    "month": month, "status": status, "notes": str(x.get("notes") or "").strip()[:1000], "source": src,
+                    "month": month, "status": status, "notes": str(x.get("notes") or "").strip()[:1000], "source": src, "request": req, "app": app,
                     "addedAt": str(x.get("addedAt") or "")[:40] or now()})
     return out
 
@@ -846,7 +889,8 @@ class Handler(BaseHTTPRequestHandler):
                 "roster": [p["name"] for p in cfg["roster"] if p["active"]],
                 "projects": [{"name": p["name"], "type": p["type"]} for p in project_choices() if p["active"]],
                 "screenshotInstructions": cfg.get("screenshotInstructions", ""),
-                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_CHOICES, "claudeFit": report.CLAUDE_FIT,
+                "timeSaved": TIME_SAVED, "timeLeft": TIME_LEFT, "ideaStatus": report.IDEA_CHOICES,
+                "apps": [{"id": a["id"], "name": a["name"]} for a in DATA["apps"] if a.get("status") != "Retired"], "claudeFit": report.CLAUDE_FIT,
                 "taskCategories": task_categories(),
                 "writable": WRITABLE, "persistent": state_persistent(),
             })
@@ -934,7 +978,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with LOCK:
                 return self.send_json(200, {"roadmap": DATA["roadmap"], "ideas": all_ideas(), "projects": report.roadmap_projects(DATA),
-                                            "roadmapStatus": report.ROADMAP_STATUS,
+                                            "roadmapStatus": report.ROADMAP_STATUS, "apps": DATA["apps"], "appStatus": report.APP_STATUS,
+                                            "requests": all_requests(),
                                             "roster": [p["name"] for p in DATA["config"]["roster"] if p.get("active") and p.get("name")]})
         if path == "/projects":       # every project across all weeks, and how it's moving
             if not self.gate("admin"):
@@ -1036,6 +1081,22 @@ class Handler(BaseHTTPRequestHandler):
                     errors.append({"idea": i, "error": "Say where the idea stands: need a greenlight, let's discuss, or just an idea."})
                 ideas.append({"idea": idea, "why": why, "status": status})
             ideas = ideas[:50]
+            # feature requests (optional) for one of the apps we look after
+            app_ids = {a["id"] for a in DATA["apps"]}
+            requests = []
+            for i, x in enumerate(body.get("requests") or []):
+                x = x if isinstance(x, dict) else {}
+                text = re.sub(r"\s+", " ", str(x.get("request") or "")).strip()[:300]
+                asked = re.sub(r"\s+", " ", str(x.get("askedBy") or "")).strip()[:80]
+                app = str(x.get("app") or "")
+                if not text and not asked and not app:
+                    continue
+                if app not in app_ids:
+                    errors.append({"request": i, "error": "Pick the app."})
+                elif not text:
+                    errors.append({"request": i, "error": "Say what's being asked for."})
+                requests.append({"app": app, "request": text, "askedBy": asked})
+            requests = requests[:20]
             # tweaks (optional): small changes to an existing project or tool, not a full build
             tweaks = []
             for i, x in enumerate(body.get("tweaks") or []):
@@ -1065,6 +1126,7 @@ class Handler(BaseHTTPRequestHandler):
                                                 "errors": [{"usage": True, "error": "That screenshot couldn't be read."}]})
             usage["screenshot"] = shot
             usage["ideas"] = ideas
+            usage["requests"] = requests
             usage["ideasCarried"] = True        # this list started from every earlier idea, so it's the whole list now
             usage["tweaks"] = tweaks
 
@@ -1277,7 +1339,22 @@ class Handler(BaseHTTPRequestHandler):
                     DATA["roadmap"] = before
                     return self.unsaved()
                 log_change("update", "roadmap", before, items)
-                return self.send_json(200, {"roadmap": items, "ideas": all_ideas()})
+                return self.send_json(200, {"roadmap": items, "ideas": all_ideas(), "requests": all_requests()})
+        if urlsplit(self.path).path == "/api/admin/apps":
+            if not self.gate("admin"):
+                return
+            body = self.read_json() or {}
+            with LOCK:
+                apps = clean_apps(body.get("apps"))
+                if isinstance(apps, str):
+                    return self.send_json(400, {"error": apps})
+                before = DATA["apps"]
+                DATA["apps"] = apps
+                if not write("apps"):
+                    DATA["apps"] = before
+                    return self.unsaved()
+                log_change("update", "apps", before, apps)
+                return self.send_json(200, {"apps": apps, "requests": all_requests()})
         if urlsplit(self.path).path != "/api/admin/config":
             return self.send_json(404, {"error": "Not found"})
         if not self.gate("admin"):
